@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/akhmetov/poisk/internal/chunk"
+	ignore "github.com/sabhiram/go-gitignore"
 )
 
 // docExtensions are always included for markdown/text content.
@@ -35,6 +36,16 @@ func buildExtensionSet(languages, legacyExtensions []string) map[string]bool {
 	return extSet
 }
 
+func loadGitignore(root string) *ignore.GitIgnore {
+	gitignorePath := filepath.Join(root, ".gitignore")
+	gi, err := ignore.CompileIgnoreFile(gitignorePath)
+	if err != nil {
+		return nil
+	}
+	slog.Info("loaded .gitignore", "path", gitignorePath)
+	return gi
+}
+
 func scanFolder(root string, languages, extensions []string, excludePatterns []string, maxSizeKB int) ([]string, error) {
 	// Resolve symlinks so WalkDir can traverse the real directory.
 	resolved, err := filepath.EvalSymlinks(root)
@@ -44,6 +55,7 @@ func scanFolder(root string, languages, extensions []string, excludePatterns []s
 	root = resolved
 
 	extSet := buildExtensionSet(languages, extensions)
+	gi := loadGitignore(root)
 
 	maxBytes := int64(maxSizeKB) * 1024
 	var files []string
@@ -62,7 +74,20 @@ func scanFolder(root string, languages, extensions []string, excludePatterns []s
 					return filepath.SkipDir
 				}
 			}
+			if gi != nil {
+				rel, relErr := filepath.Rel(root, path)
+				if relErr == nil && rel != "." && gi.MatchesPath(rel+"/") {
+					return filepath.SkipDir
+				}
+			}
 			return nil
+		}
+
+		if gi != nil {
+			rel, relErr := filepath.Rel(root, path)
+			if relErr == nil && gi.MatchesPath(rel) {
+				return nil
+			}
 		}
 
 		ext := strings.ToLower(filepath.Ext(name))
