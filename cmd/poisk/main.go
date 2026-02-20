@@ -35,5 +35,14 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "Usage: poisk <command>\n\nCommands:\n  serve   Start MCP server (stdio)\n  index   Index configured folders\n  search  Search indexed content\n  status  Show index status\n")
+	fmt.Fprintf(os.Stderr, `Usage: poisk <command>
+
+Commands:
+  serve   Start MCP server (stdio)
+  index   Index configured folders
+            --watch       Re-index periodically instead of once
+            --interval D  Interval between cycles (default 5m)
+  search  Search indexed content
+  status  Show index status
+`)
 }

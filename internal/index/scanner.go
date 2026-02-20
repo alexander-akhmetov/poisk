@@ -36,12 +36,19 @@ func buildExtensionSet(languages, legacyExtensions []string) map[string]bool {
 }
 
 func scanFolder(root string, languages, extensions []string, excludePatterns []string, maxSizeKB int) ([]string, error) {
+	// Resolve symlinks so WalkDir can traverse the real directory.
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, err
+	}
+	root = resolved
+
 	extSet := buildExtensionSet(languages, extensions)
 
 	maxBytes := int64(maxSizeKB) * 1024
 	var files []string
 
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			slog.Warn("scan error", "path", path, "error", err)
 			return nil

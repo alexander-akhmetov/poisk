@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/akhmetov/poisk/internal/config"
 	"github.com/akhmetov/poisk/internal/embed"
@@ -43,6 +45,25 @@ func cmdServe() error {
 }
 
 func cmdIndex() error {
+	watch := false
+	interval := 5 * time.Minute
+	for i := 2; i < len(os.Args); i++ {
+		switch os.Args[i] {
+		case "--watch":
+			watch = true
+		case "--interval":
+			if i+1 >= len(os.Args) {
+				return fmt.Errorf("--interval requires a value (e.g. 5m, 30s)")
+			}
+			i++
+			d, err := time.ParseDuration(os.Args[i])
+			if err != nil {
+				return fmt.Errorf("invalid interval %q: %w", os.Args[i], err)
+			}
+			interval = d
+		}
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -57,12 +78,38 @@ func cmdIndex() error {
 	client := embed.NewClient(cfg.Embedding.BaseURL, cfg.Embedding.APIKey, cfg.Embedding.Model, cfg.Embedding.Dimensions)
 	indexer := index.NewIndexer(db, client, cfg)
 
-	ctx := context.Background()
-	stats, err := indexer.IndexAll(ctx)
+	if !watch {
+		return indexOnce(indexer)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	slog.Info("watch mode started", "interval", interval)
+	if err := indexOnce(indexer); err != nil {
+		return err
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("watch mode stopped")
+			return nil
+		case <-ticker.C:
+			if err := indexOnce(indexer); err != nil {
+				slog.Error("indexing cycle failed", "error", err)
+			}
+		}
+	}
+}
+
+func indexOnce(indexer *index.Indexer) error {
+	stats, err := indexer.IndexAll(context.Background())
 	if err != nil {
 		return fmt.Errorf("indexing: %w", err)
 	}
-
 	for _, s := range stats {
 		fmt.Fprintf(os.Stderr, "%-40s files=%d chunks=%d skipped=%d errors=%d parse_errors=%d\n",
 			s.Folder, s.FilesProcessed, s.ChunksCreated, s.FilesSkipped, s.Errors,
