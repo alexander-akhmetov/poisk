@@ -4,9 +4,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
+
+func expandHome(path, home string) string {
+	if path == "~" {
+		return home
+	}
+	if strings.HasPrefix(path, "~/") {
+		return filepath.Join(home, path[2:])
+	}
+	return path
+}
 
 type Config struct {
 	Embedding EmbeddingConfig `toml:"embedding"`
@@ -100,6 +111,12 @@ func Load() (*Config, error) {
 
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
+	}
+
+	// Expand ~ in folder paths
+	home, _ := os.UserHomeDir()
+	for i := range cfg.Folders {
+		cfg.Folders[i].Path = expandHome(cfg.Folders[i].Path, home)
 	}
 
 	// Default languages only when neither languages nor legacy extensions were set
