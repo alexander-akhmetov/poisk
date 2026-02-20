@@ -1,25 +1,31 @@
 package search
 
 import (
+	"strings"
+
 	"github.com/akhmetov/poisk/internal/store"
 )
 
-func searchVec(s *store.Store, queryBlob []byte, topK int, folder string, threshold float64) ([]Result, error) {
+func searchVec(s *store.Store, queryBlob []byte, topK int, folders []string, threshold float64) ([]Result, error) {
 	if !s.VecAvailable() {
 		return nil, nil
 	}
 
 	fetchLimit := topK * 5
 
-	query := `SELECT e.file_path, e.line_num, e.chunk_text, v.distance, e.folder
+	query := `SELECT e.file_path, e.line_num, e.end_line, e.chunk_text, v.distance, e.folder, e.language, e.chunk_kind, e.symbol
 		FROM vec_embeddings v
 		JOIN embeddings e ON e.id = v.rowid
 		WHERE v.embedding MATCH ? AND k = ?`
 	args := []any{queryBlob, fetchLimit}
 
-	if folder != "" {
-		query += " AND e.source = ?"
-		args = append(args, folder)
+	if len(folders) > 0 {
+		placeholders := strings.Repeat("?,", len(folders))
+		placeholders = placeholders[:len(placeholders)-1]
+		query += " AND e.source IN (" + placeholders + ")"
+		for _, f := range folders {
+			args = append(args, f)
+		}
 	}
 	query += " ORDER BY v.distance ASC"
 
@@ -33,7 +39,7 @@ func searchVec(s *store.Store, queryBlob []byte, topK int, folder string, thresh
 	for rows.Next() {
 		var r Result
 		var distance float64
-		if err := rows.Scan(&r.FilePath, &r.LineNum, &r.Text, &distance, &r.Folder); err != nil {
+		if err := rows.Scan(&r.FilePath, &r.LineNum, &r.EndLine, &r.Text, &distance, &r.Folder, &r.Language, &r.Kind, &r.Symbol); err != nil {
 			return nil, err
 		}
 		r.Score = 1.0 - distance // cosine distance → similarity

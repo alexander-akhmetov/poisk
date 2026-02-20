@@ -2,6 +2,14 @@ package store
 
 import "strconv"
 
+const schemaVersion = 2
+
+const schemaVersionDDL = `
+CREATE TABLE IF NOT EXISTS schema_version (
+    version INTEGER NOT NULL
+);
+`
+
 const schemaSQL = `
 CREATE TABLE IF NOT EXISTS embedding_files (
     source    TEXT NOT NULL,
@@ -17,7 +25,11 @@ CREATE TABLE IF NOT EXISTS embeddings (
     line_num   INTEGER NOT NULL,
     chunk_text TEXT NOT NULL,
     embedding  BLOB NOT NULL,
-    folder     TEXT
+    folder     TEXT,
+    end_line   INTEGER NOT NULL DEFAULT 0,
+    language   TEXT NOT NULL DEFAULT '',
+    chunk_kind TEXT NOT NULL DEFAULT '',
+    symbol     TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_emb_source_file ON embeddings(source, file_path);
@@ -33,4 +45,4 @@ func vec0DDL(dims int) string {
 	return `CREATE VIRTUAL TABLE IF NOT EXISTS vec_embeddings USING vec0(embedding float[` + strconv.Itoa(dims) + `] distance_metric=cosine)`
 }
 
-const fts5DDL = `CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(chunk_text, id UNINDEXED, source UNINDEXED, file_path UNINDEXED, line_num UNINDEXED, folder UNINDEXED)`
+const fts5DDL = `CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(chunk_text, id UNINDEXED, source UNINDEXED, file_path UNINDEXED, line_num UNINDEXED, folder UNINDEXED, end_line UNINDEXED, language UNINDEXED, chunk_kind UNINDEXED, symbol UNINDEXED)`

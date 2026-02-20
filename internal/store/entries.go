@@ -6,9 +6,13 @@ type Entry struct {
 	Source    string
 	FilePath  string
 	LineNum   int
+	EndLine   int
 	Text      string
 	Embedding []float32
 	Folder    string
+	Language  string
+	Kind      string
+	Symbol    string
 }
 
 func (s *Store) InsertEntries(source, filePath string, entries []Entry) error {
@@ -44,7 +48,7 @@ func (s *Store) InsertEntries(source, filePath string, entries []Entry) error {
 	}
 
 	insertStmt, err := tx.Prepare(
-		"INSERT INTO embeddings (source, file_path, line_num, chunk_text, embedding, folder) VALUES (?, ?, ?, ?, ?, ?)",
+		"INSERT INTO embeddings (source, file_path, line_num, chunk_text, embedding, folder, end_line, language, chunk_kind, symbol) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 	)
 	if err != nil {
 		return fmt.Errorf("prepare insert: %w", err)
@@ -53,7 +57,7 @@ func (s *Store) InsertEntries(source, filePath string, entries []Entry) error {
 
 	for _, e := range entries {
 		blob := Float32sToBlob(e.Embedding)
-		res, err := insertStmt.Exec(source, filePath, e.LineNum, e.Text, blob, e.Folder)
+		res, err := insertStmt.Exec(source, filePath, e.LineNum, e.Text, blob, e.Folder, e.EndLine, e.Language, e.Kind, e.Symbol)
 		if err != nil {
 			return fmt.Errorf("insert entry: %w", err)
 		}
@@ -67,8 +71,9 @@ func (s *Store) InsertEntries(source, filePath string, entries []Entry) error {
 
 		if s.ftsAvailable {
 			if _, err := tx.Exec(
-				"INSERT INTO chunks_fts(chunk_text, id, source, file_path, line_num, folder) VALUES (?, ?, ?, ?, ?, ?)",
+				"INSERT INTO chunks_fts(chunk_text, id, source, file_path, line_num, folder, end_line, language, chunk_kind, symbol) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 				e.Text, fmt.Sprintf("%d", rowid), source, filePath, fmt.Sprintf("%d", e.LineNum), e.Folder,
+				fmt.Sprintf("%d", e.EndLine), e.Language, e.Kind, e.Symbol,
 			); err != nil {
 				return fmt.Errorf("FTS5 sync insert: %w", err)
 			}

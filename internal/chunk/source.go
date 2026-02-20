@@ -21,8 +21,10 @@ func chunkSource(content string) []Chunk {
 		}
 
 		chunks = append(chunks, Chunk{
-			Text:    text,
-			LineNum: start + 1,
+			Text:      text,
+			StartLine: start + 1,
+			EndLine:   end,
+			Kind:      "window",
 		})
 
 		if end == len(lines) {

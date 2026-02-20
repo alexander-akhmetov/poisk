@@ -5,13 +5,38 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/akhmetov/poisk/internal/chunk"
 )
 
-func scanFolder(root string, extensions []string, excludePatterns []string, maxSizeKB int) ([]string, error) {
-	extSet := make(map[string]bool, len(extensions))
-	for _, e := range extensions {
+// docExtensions are always included for markdown/text content.
+var docExtensions = []string{".md", ".markdown", ".txt", ".org"}
+
+func buildExtensionSet(languages, legacyExtensions []string) map[string]bool {
+	extSet := make(map[string]bool)
+
+	// Language-based extensions from tree-sitter
+	if len(languages) > 0 {
+		for _, ext := range chunk.SupportedExtensions(languages) {
+			extSet["."+ext] = true
+		}
+	}
+
+	// Legacy extensions (backward compat)
+	for _, e := range legacyExtensions {
 		extSet["."+e] = true
 	}
+
+	// Always include doc extensions
+	for _, ext := range docExtensions {
+		extSet[ext] = true
+	}
+
+	return extSet
+}
+
+func scanFolder(root string, languages, extensions []string, excludePatterns []string, maxSizeKB int) ([]string, error) {
+	extSet := buildExtensionSet(languages, extensions)
 
 	maxBytes := int64(maxSizeKB) * 1024
 	var files []string

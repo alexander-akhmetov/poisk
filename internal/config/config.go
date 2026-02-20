@@ -24,14 +24,16 @@ type EmbeddingConfig struct {
 }
 
 type SearchConfig struct {
-	VectorWeight        float64 `toml:"vector_weight"`
-	TextWeight          float64 `toml:"text_weight"`
+	VectorWeight        float64 `toml:"vector_weight"`  // deprecated: kept for config compat
+	TextWeight          float64 `toml:"text_weight"`    // deprecated: kept for config compat
+	RRFk                int     `toml:"rrf_k"`          // RRF constant, default 60
 	SimilarityThreshold float64 `toml:"similarity_threshold"`
 	DefaultTopK         int     `toml:"default_top_k"`
 }
 
 type IndexConfig struct {
-	Extensions      []string `toml:"extensions"`
+	Extensions      []string `toml:"extensions"`       // deprecated: use Languages
+	Languages       []string `toml:"languages"`
 	ExcludePatterns []string `toml:"exclude_patterns"`
 	MaxFileSizeKB   int      `toml:"max_file_size_kb"`
 }
@@ -52,11 +54,11 @@ func DefaultConfig() Config {
 		Search: SearchConfig{
 			VectorWeight:        0.7,
 			TextWeight:          0.3,
+			RRFk:                60,
 			SimilarityThreshold: 0.3,
 			DefaultTopK:         20,
 		},
 		Index: IndexConfig{
-			Extensions:      []string{"go", "py", "rs", "js", "ts", "md", "txt", "org"},
 			ExcludePatterns: []string{".git", "node_modules", "vendor", "__pycache__", ".venv"},
 			MaxFileSizeKB:   512,
 		},
@@ -90,6 +92,7 @@ func Load() (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			cfg.Index.Languages = []string{"go", "python", "rust", "javascript", "typescript"}
 			return &cfg, nil
 		}
 		return nil, fmt.Errorf("read config: %w", err)
@@ -97,6 +100,11 @@ func Load() (*Config, error) {
 
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
+	}
+
+	// Default languages only when neither languages nor legacy extensions were set
+	if len(cfg.Index.Languages) == 0 && len(cfg.Index.Extensions) == 0 {
+		cfg.Index.Languages = []string{"go", "python", "rust", "javascript", "typescript"}
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -116,11 +124,8 @@ func (c *Config) validate() error {
 	if c.Search.DefaultTopK <= 0 {
 		return fmt.Errorf("search.default_top_k must be > 0")
 	}
-	if c.Search.VectorWeight < 0 || c.Search.VectorWeight > 1 {
-		return fmt.Errorf("search.vector_weight must be between 0 and 1, got %v", c.Search.VectorWeight)
-	}
-	if c.Search.TextWeight < 0 || c.Search.TextWeight > 1 {
-		return fmt.Errorf("search.text_weight must be between 0 and 1, got %v", c.Search.TextWeight)
+	if c.Search.RRFk < 0 {
+		return fmt.Errorf("search.rrf_k must be >= 0, got %v", c.Search.RRFk)
 	}
 	if c.Search.SimilarityThreshold < 0 || c.Search.SimilarityThreshold > 1 {
 		return fmt.Errorf("search.similarity_threshold must be between 0 and 1, got %v", c.Search.SimilarityThreshold)

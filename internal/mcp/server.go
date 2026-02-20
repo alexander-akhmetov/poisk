@@ -25,9 +25,9 @@ func Run(ctx context.Context, indexer *index.Indexer, searcher *search.Searcher,
 }
 
 type SearchInput struct {
-	Query  string `json:"query" jsonschema:"required,description=Search query text"`
-	TopK   int    `json:"top_k,omitempty" jsonschema:"description=Max results (default 20)"`
-	Folder string `json:"folder,omitempty" jsonschema:"description=Filter to folder path"`
+	Query   string   `json:"query" jsonschema:"required,description=Search query text"`
+	TopK    int      `json:"top_k,omitempty" jsonschema:"description=Max results (default 20)"`
+	Folders []string `json:"folders,omitempty" jsonschema:"description=Filter to folder paths"`
 }
 
 type ReindexInput struct {
@@ -40,7 +40,7 @@ func registerTools(server *gomcp.Server, indexer *index.Indexer, searcher *searc
 		Name:        "search",
 		Description: "Search indexed source code and documents using hybrid semantic + keyword search",
 	}, func(ctx context.Context, _ *gomcp.CallToolRequest, args SearchInput) (*gomcp.CallToolResult, any, error) {
-		results, err := searcher.Search(ctx, args.Query, args.TopK, args.Folder)
+		results, err := searcher.Search(ctx, args.Query, args.TopK, args.Folders)
 		if err != nil && len(results) == 0 {
 			return nil, nil, fmt.Errorf("search: %w", err)
 		}
@@ -53,7 +53,15 @@ func registerTools(server *gomcp.Server, indexer *index.Indexer, searcher *searc
 			sb.WriteString("No results found.")
 		} else {
 			for _, r := range results {
-				fmt.Fprintf(&sb, "[%.2f] %s:%d\n%s\n\n", r.Score, r.FilePath, r.LineNum, r.Text)
+				loc := fmt.Sprintf("%s:%d", r.FilePath, r.LineNum)
+				if r.EndLine > 0 && r.EndLine != r.LineNum {
+					loc = fmt.Sprintf("%s:%d-%d", r.FilePath, r.LineNum, r.EndLine)
+				}
+				meta := ""
+				if r.Symbol != "" {
+					meta = fmt.Sprintf(" [%s]", r.Symbol)
+				}
+				fmt.Fprintf(&sb, "[%.2f] %s%s\n%s\n\n", r.Score, loc, meta, r.Text)
 			}
 		}
 		return &gomcp.CallToolResult{
@@ -106,8 +114,9 @@ func registerTools(server *gomcp.Server, indexer *index.Indexer, searcher *searc
 
 		var sb strings.Builder
 		for _, s := range stats {
-			fmt.Fprintf(&sb, "%s: files=%d chunks=%d skipped=%d errors=%d\n",
-				s.Folder, s.FilesProcessed, s.ChunksCreated, s.FilesSkipped, s.Errors)
+			fmt.Fprintf(&sb, "%s: files=%d chunks=%d skipped=%d errors=%d parse_errors=%d\n",
+				s.Folder, s.FilesProcessed, s.ChunksCreated, s.FilesSkipped, s.Errors,
+				s.FilesSkippedParseError)
 		}
 		return &gomcp.CallToolResult{
 			Content: []gomcp.Content{&gomcp.TextContent{Text: sb.String()}},

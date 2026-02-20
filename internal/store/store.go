@@ -44,10 +44,33 @@ func Open(dbPath string, dimensions int) (*Store, error) {
 }
 
 func (s *Store) initSchema() error {
+	// Schema version table always exists
+	if _, err := s.db.Exec(schemaVersionDDL); err != nil {
+		return fmt.Errorf("create schema_version: %w", err)
+	}
+
+	// Check schema version
+	if s.needsSchemaMigration() {
+		slog.Info("schema version mismatch, dropping all tables for full reindex")
+		s.dropAllTables()
+		// Recreate schema version table after drop
+		if _, err := s.db.Exec(schemaVersionDDL); err != nil {
+			return fmt.Errorf("recreate schema_version: %w", err)
+		}
+	}
+
 	for _, stmt := range splitStatements(schemaSQL) {
 		if _, err := s.db.Exec(stmt); err != nil {
 			return fmt.Errorf("exec schema: %w", err)
 		}
+	}
+
+	// Update stored version
+	if _, err := s.db.Exec("DELETE FROM schema_version"); err != nil {
+		return fmt.Errorf("delete schema_version: %w", err)
+	}
+	if _, err := s.db.Exec("INSERT INTO schema_version (version) VALUES (?)", schemaVersion); err != nil {
+		return fmt.Errorf("insert schema_version: %w", err)
 	}
 
 	// vec0 — drop and recreate if dimensions changed
@@ -64,9 +87,28 @@ func (s *Store) initSchema() error {
 	return nil
 }
 
+func (s *Store) needsSchemaMigration() bool {
+	var version int
+	err := s.db.QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&version)
+	if err != nil {
+		return true // no version row = needs migration
+	}
+	return version != schemaVersion
+}
+
+func (s *Store) dropAllTables() {
+	tables := []string{
+		"vec_embeddings", "chunks_fts", "embeddings",
+		"embedding_files", "embedding_meta", "schema_version",
+	}
+	for _, t := range tables {
+		if _, err := s.db.Exec("DROP TABLE IF EXISTS " + t); err != nil {
+			slog.Warn("failed to drop table", "table", t, "error", err)
+		}
+	}
+}
+
 func (s *Store) initVec0() {
-	// Check if ANY stored source has different dimensions than config.
-	// If so, drop vec0 and let indexer rebuild incrementally.
 	rows, err := s.db.Query("SELECT DISTINCT dimensions FROM embedding_meta")
 	if err == nil {
 		defer rows.Close()
@@ -94,10 +136,20 @@ func (s *Store) initVec0() {
 }
 
 func (s *Store) backfillFTS5() {
-	_, err := s.db.Exec(`INSERT INTO chunks_fts(chunk_text, id, source, file_path, line_num, folder)
-		SELECT chunk_text, CAST(id AS TEXT), source, file_path, CAST(line_num AS TEXT), COALESCE(folder, '')
-		FROM embeddings
-		WHERE id NOT IN (SELECT CAST(id AS INTEGER) FROM chunks_fts)`)
+	// Only backfill if FTS5 table is empty but embeddings exist
+	var ftsCount int
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM chunks_fts").Scan(&ftsCount); err != nil {
+		slog.Warn("FTS5 count check failed", "error", err)
+		return
+	}
+	if ftsCount > 0 {
+		return
+	}
+
+	_, err := s.db.Exec(`INSERT INTO chunks_fts(chunk_text, id, source, file_path, line_num, folder, end_line, language, chunk_kind, symbol)
+		SELECT chunk_text, CAST(id AS TEXT), source, file_path, CAST(line_num AS TEXT), COALESCE(folder, ''),
+		       CAST(end_line AS TEXT), language, chunk_kind, symbol
+		FROM embeddings`)
 	if err != nil {
 		slog.Warn("FTS5 backfill failed", "error", err)
 	}
@@ -111,7 +163,6 @@ func (s *Store) VecAvailable() bool { return s.vecAvailable }
 func (s *Store) FTSAvailable() bool { return s.ftsAvailable }
 func (s *Store) DB() *sql.DB        { return s.db }
 
-// Dimensions returns the configured embedding dimensions.
 func (s *Store) Dimensions() int { return s.dimensions }
 
 func splitStatements(ddl string) []string {

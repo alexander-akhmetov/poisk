@@ -1,6 +1,7 @@
 package search
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"unicode"
@@ -8,26 +9,102 @@ import (
 	"github.com/akhmetov/poisk/internal/store"
 )
 
-func buildFTSQuery(text string) string {
-	var tokens []string
+// tokenize splits text into code-aware tokens.
+// It extracts words from the input, then splits camelCase and snake_case,
+// preserving originals alongside the sub-tokens.
+func tokenize(text string) []string {
+	// Extract raw words (letters, digits, underscores)
+	var rawTokens []string
 	var current []rune
-
 	for _, ch := range text {
 		if unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '_' {
 			current = append(current, ch)
 		} else if len(current) > 0 {
-			tokens = append(tokens, string(current))
+			rawTokens = append(rawTokens, string(current))
 			current = nil
 		}
 	}
 	if len(current) > 0 {
-		tokens = append(tokens, string(current))
+		rawTokens = append(rawTokens, string(current))
 	}
 
+	seen := make(map[string]bool)
+	var result []string
+	add := func(s string) {
+		lower := strings.ToLower(s)
+		if lower == "" || seen[lower] {
+			return
+		}
+		seen[lower] = true
+		result = append(result, lower)
+	}
+
+	for _, tok := range rawTokens {
+		// Split snake_case first
+		snakeParts := strings.Split(tok, "_")
+		if len(snakeParts) > 1 {
+			for _, part := range snakeParts {
+				if part == "" {
+					continue
+				}
+				// Split camelCase within each snake part
+				for _, sub := range splitCamel(part) {
+					add(sub)
+				}
+			}
+			add(tok) // preserve original with underscores
+		} else {
+			// Split camelCase
+			camelParts := splitCamel(tok)
+			if len(camelParts) > 1 {
+				for _, sub := range camelParts {
+					add(sub)
+				}
+				add(tok) // preserve original
+			} else {
+				add(tok)
+			}
+		}
+	}
+
+	return result
+}
+
+// splitCamel splits a camelCase or PascalCase string into parts.
+// "getHTTPClient" → ["get", "HTTP", "Client"]
+// "simpleWord" → ["simple", "Word"]
+func splitCamel(s string) []string {
+	if s == "" {
+		return nil
+	}
+	runes := []rune(s)
+	var parts []string
+	start := 0
+	for i := 1; i < len(runes); i++ {
+		prevUpper := unicode.IsUpper(runes[i-1])
+		currUpper := unicode.IsUpper(runes[i])
+		currLower := unicode.IsLower(runes[i])
+
+		// Split at lower→upper boundary: "getH" → split before H
+		if !prevUpper && currUpper {
+			parts = append(parts, string(runes[start:i]))
+			start = i
+			continue
+		}
+		// Split at upper→lower when preceded by uppercase run: "HTTPClient" → "HTTP" + "Client"
+		if prevUpper && currLower && i-start > 1 {
+			parts = append(parts, string(runes[start:i-1]))
+			start = i - 1
+		}
+	}
+	parts = append(parts, string(runes[start:]))
+	return parts
+}
+
+func buildStrictAND(tokens []string) string {
 	if len(tokens) == 0 {
 		return ""
 	}
-
 	quoted := make([]string, len(tokens))
 	for i, t := range tokens {
 		quoted[i] = `"` + t + `"`
@@ -35,29 +112,111 @@ func buildFTSQuery(text string) string {
 	return strings.Join(quoted, " AND ")
 }
 
-func searchFTS(s *store.Store, queryText string, topK int, folder string) ([]Result, error) {
+func buildRelaxedOR(tokens []string) string {
+	if len(tokens) == 0 {
+		return ""
+	}
+	quoted := make([]string, len(tokens))
+	for i, t := range tokens {
+		quoted[i] = `"` + t + `"`
+	}
+	return strings.Join(quoted, " OR ")
+}
+
+func buildPrefixOR(tokens []string) string {
+	if len(tokens) == 0 {
+		return ""
+	}
+	parts := make([]string, len(tokens))
+	for i, t := range tokens {
+		parts[i] = `"` + t + `"` + "*"
+	}
+	return strings.Join(parts, " OR ")
+}
+
+// searchFTS performs staged FTS retrieval: strict AND → relaxed OR → prefix OR.
+// Each stage only runs if prior stages returned fewer results than topK.
+// Results are deduplicated across stages by filepath:line.
+func searchFTS(s *store.Store, queryText string, topK int, folders []string) ([]Result, error) {
 	if !s.FTSAvailable() {
 		return nil, nil
 	}
 
-	ftsQuery := buildFTSQuery(queryText)
-	if ftsQuery == "" {
+	tokens := tokenize(queryText)
+	if len(tokens) == 0 {
 		return nil, nil
 	}
 
-	fetchLimit := topK * 5
+	seen := make(map[string]bool)
+	var results []Result
 
-	query := `SELECT file_path, line_num, chunk_text, bm25(chunks_fts) AS rank, folder
+	addResults := func(staged []Result) {
+		for _, r := range staged {
+			key := resultKey(r)
+			if !seen[key] {
+				seen[key] = true
+				results = append(results, r)
+			}
+		}
+	}
+
+	// Stage A: strict AND
+	if q := buildStrictAND(tokens); q != "" {
+		rows, err := queryFTS(s, q, topK*5, folders)
+		if err != nil {
+			return nil, err
+		}
+		addResults(rows)
+	}
+
+	// Stage B: relaxed OR (only if A returned < topK)
+	if len(results) < topK {
+		if q := buildRelaxedOR(tokens); q != "" {
+			rows, err := queryFTS(s, q, topK*5, folders)
+			if err != nil {
+				return nil, err
+			}
+			addResults(rows)
+		}
+	}
+
+	// Stage C: prefix OR (only if A+B returned < topK)
+	if len(results) < topK {
+		if q := buildPrefixOR(tokens); q != "" {
+			rows, err := queryFTS(s, q, topK*5, folders)
+			if err != nil {
+				return nil, err
+			}
+			addResults(rows)
+		}
+	}
+
+	if len(results) > topK {
+		results = results[:topK]
+	}
+	return results, nil
+}
+
+func resultKey(r Result) string {
+	return fmt.Sprintf("%s:%d", r.FilePath, r.LineNum)
+}
+
+func queryFTS(s *store.Store, ftsQuery string, limit int, folders []string) ([]Result, error) {
+	query := `SELECT file_path, line_num, end_line, chunk_text, bm25(chunks_fts) AS rank, folder, language, chunk_kind, symbol
 		FROM chunks_fts
 		WHERE chunks_fts MATCH ?`
 	args := []any{ftsQuery}
 
-	if folder != "" {
-		query += " AND source = ?"
-		args = append(args, folder)
+	if len(folders) > 0 {
+		placeholders := strings.Repeat("?,", len(folders))
+		placeholders = placeholders[:len(placeholders)-1]
+		query += " AND source IN (" + placeholders + ")"
+		for _, f := range folders {
+			args = append(args, f)
+		}
 	}
 	query += " ORDER BY rank ASC LIMIT ?"
-	args = append(args, fetchLimit)
+	args = append(args, limit)
 
 	rows, err := s.DB().Query(query, args...)
 	if err != nil {
@@ -69,24 +228,24 @@ func searchFTS(s *store.Store, queryText string, topK int, folder string) ([]Res
 	for rows.Next() {
 		var r Result
 		var rank float64
-		var lineStr string
-		if err := rows.Scan(&r.FilePath, &lineStr, &r.Text, &rank, &r.Folder); err != nil {
+		var lineStr, endLineStr string
+		if err := rows.Scan(&r.FilePath, &lineStr, &endLineStr, &r.Text, &rank, &r.Folder, &r.Language, &r.Kind, &r.Symbol); err != nil {
 			return nil, err
 		}
-		// Parse line number from string (FTS5 stores as text)
 		for _, ch := range lineStr {
 			if ch >= '0' && ch <= '9' {
 				r.LineNum = r.LineNum*10 + int(ch-'0')
 			}
 		}
-		// Normalize BM25: abs(rank)/(1+abs(rank)) → [0,1]
+		for _, ch := range endLineStr {
+			if ch >= '0' && ch <= '9' {
+				r.EndLine = r.EndLine*10 + int(ch-'0')
+			}
+		}
 		ar := math.Abs(rank)
 		r.Score = ar / (1.0 + ar)
 		results = append(results, r)
 	}
 
-	if len(results) > topK {
-		results = results[:topK]
-	}
 	return results, rows.Err()
 }

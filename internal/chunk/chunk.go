@@ -6,16 +6,25 @@ import (
 )
 
 type Chunk struct {
-	Text    string
-	LineNum int
+	Text      string
+	StartLine int
+	EndLine   int
+	Language  string
+	Kind      string // e.g. "function_declaration", "section", "window"
+	Symbol    string // e.g. function name, heading path
 }
 
-func File(path, content string) []Chunk {
+func File(path, content string) ([]Chunk, error) {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".md", ".markdown":
-		return chunkMarkdown(content)
+		return chunkMarkdown(content), nil
 	default:
-		return chunkSource(content)
+		// Try tree-sitter for supported languages
+		if _, ok := extToLang[ext]; ok {
+			return chunkTreeSitter(ext, content)
+		}
+		// Fall back to fixed-window for unknown extensions
+		return chunkSource(content), nil
 	}
 }

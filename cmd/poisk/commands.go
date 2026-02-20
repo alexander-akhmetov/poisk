@@ -64,8 +64,9 @@ func cmdIndex() error {
 	}
 
 	for _, s := range stats {
-		fmt.Fprintf(os.Stderr, "%-40s files=%d chunks=%d skipped=%d errors=%d\n",
-			s.Folder, s.FilesProcessed, s.ChunksCreated, s.FilesSkipped, s.Errors)
+		fmt.Fprintf(os.Stderr, "%-40s files=%d chunks=%d skipped=%d errors=%d parse_errors=%d\n",
+			s.Folder, s.FilesProcessed, s.ChunksCreated, s.FilesSkipped, s.Errors,
+			s.FilesSkippedParseError)
 	}
 	return nil
 }
@@ -91,7 +92,7 @@ func cmdSearch() error {
 	searcher := search.NewSearcher(db, client, cfg)
 
 	ctx := context.Background()
-	results, err := searcher.Search(ctx, query, cfg.Search.DefaultTopK, "")
+	results, err := searcher.Search(ctx, query, cfg.Search.DefaultTopK, nil)
 	if err != nil {
 		return fmt.Errorf("search: %w", err)
 	}

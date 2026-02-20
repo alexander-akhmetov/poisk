@@ -21,11 +21,12 @@ type Indexer struct {
 }
 
 type FolderStats struct {
-	Folder         string
-	FilesProcessed int
-	FilesSkipped   int
-	ChunksCreated  int
-	Errors         int
+	Folder                     string
+	FilesProcessed             int
+	FilesSkipped               int
+	ChunksCreated              int
+	Errors                 int
+	FilesSkippedParseError int
 }
 
 func NewIndexer(s *store.Store, c *embed.Client, cfg *config.Config) *Indexer {
@@ -69,7 +70,7 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 	}
 
 	// Scan files
-	files, err := scanFolder(folder, ix.cfg.Index.Extensions, ix.cfg.Index.ExcludePatterns, ix.cfg.Index.MaxFileSizeKB)
+	files, err := scanFolder(folder, ix.cfg.Index.Languages, ix.cfg.Index.Extensions, ix.cfg.Index.ExcludePatterns, ix.cfg.Index.MaxFileSizeKB)
 	if err != nil {
 		return stats, err
 	}
@@ -121,7 +122,12 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 			continue
 		}
 
-		chunks := chunk.File(filePath, string(content))
+		chunks, chunkErr := chunk.File(filePath, string(content))
+		if chunkErr != nil {
+			slog.Warn("chunk parse error", "file", filePath, "error", chunkErr)
+			stats.FilesSkippedParseError++
+			continue
+		}
 		if len(chunks) == 0 {
 			if err := ix.store.SetFileMtime(folder, filePath, mtime); err != nil {
 				slog.Error("set mtime failed", "file", filePath, "error", err)
@@ -154,13 +160,18 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 			}
 
 			for j, emb := range embeddings {
+				c := chunks[i+j]
 				entries = append(entries, store.Entry{
 					Source:    folder,
 					FilePath:  filePath,
-					LineNum:   chunks[i+j].LineNum,
-					Text:      chunks[i+j].Text,
+					LineNum:   c.StartLine,
+					EndLine:   c.EndLine,
+					Text:      c.Text,
 					Embedding: emb,
 					Folder:    folder,
+					Language:  c.Language,
+					Kind:      c.Kind,
+					Symbol:    c.Symbol,
 				})
 			}
 		}

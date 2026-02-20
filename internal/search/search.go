@@ -14,9 +14,13 @@ import (
 type Result struct {
 	FilePath string
 	LineNum  int
+	EndLine  int
 	Text     string
 	Score    float64
 	Folder   string
+	Language string
+	Kind     string
+	Symbol   string
 }
 
 type Searcher struct {
@@ -29,7 +33,7 @@ func NewSearcher(s *store.Store, c *embed.Client, cfg *config.Config) *Searcher 
 	return &Searcher{store: s, client: c, cfg: cfg}
 }
 
-func (s *Searcher) Search(ctx context.Context, query string, topK int, folder string) ([]Result, error) {
+func (s *Searcher) Search(ctx context.Context, query string, topK int, folders []string) ([]Result, error) {
 	if topK <= 0 {
 		topK = s.cfg.Search.DefaultTopK
 	}
@@ -46,14 +50,14 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int, folder st
 	var vecErr error
 	if queryVec != nil {
 		blob := store.Float32sToBlob(queryVec)
-		vecResults, vecErr = searchVec(s.store, blob, topK, folder, s.cfg.Search.SimilarityThreshold)
+		vecResults, vecErr = searchVec(s.store, blob, topK, folders, s.cfg.Search.SimilarityThreshold)
 		if vecErr != nil {
 			slog.Warn("vec search failed", "error", vecErr)
 		}
 	}
 
 	// FTS search
-	ftsResults, ftsErr := searchFTS(s.store, query, topK, folder)
+	ftsResults, ftsErr := searchFTS(s.store, query, topK, folders)
 	if ftsErr != nil {
 		slog.Warn("FTS search failed", "error", ftsErr)
 	}
@@ -71,5 +75,5 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int, folder st
 		searchErr = errors.Join(vecErr, ftsErr)
 	}
 
-	return mergeResults(vecResults, ftsResults, s.cfg.Search.VectorWeight, s.cfg.Search.TextWeight, topK), searchErr
+	return mergeResults(vecResults, ftsResults, s.cfg.Search.RRFk, topK), searchErr
 }

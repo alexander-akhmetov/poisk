@@ -1,0 +1,122 @@
+[
+  {
+    "query": "RRF reciprocal rank fusion merge",
+    "relevant_files": ["internal/search/merge.go"]
+  },
+  {
+    "query": "FTS full text search BM25 query",
+    "relevant_files": ["internal/search/fts.go"]
+  },
+  {
+    "query": "vec0 vector embedding cosine distance",
+    "relevant_files": ["internal/search/vec.go"]
+  },
+  {
+    "query": "SQLite schema create table embeddings",
+    "relevant_files": ["internal/store/schema.go"]
+  },
+  {
+    "query": "TOML config default settings",
+    "relevant_files": ["internal/config/config.go"]
+  },
+  {
+    "query": "tree sitter AST chunking function declaration",
+    "relevant_files": ["internal/chunk/treesitter.go"]
+  },
+  {
+    "query": "markdown heading fence paragraph chunk",
+    "relevant_files": ["internal/chunk/markdown.go"]
+  },
+  {
+    "query": "MCP server search tool handler",
+    "relevant_files": ["internal/mcp/server.go"]
+  },
+  {
+    "query": "indexer folder incremental mtime tracking",
+    "relevant_files": ["internal/index/indexer.go"]
+  },
+  {
+    "query": "file scanner walk directory exclude patterns",
+    "relevant_files": ["internal/index/scanner.go"]
+  },
+  {
+    "query": "embedding client HTTP POST batch",
+    "relevant_files": ["internal/embed/client.go"]
+  },
+  {
+    "query": "float32 blob byte conversion",
+    "relevant_files": ["internal/store/blob.go"]
+  },
+  {
+    "query": "insert entry transaction vec0 FTS5 sync",
+    "relevant_files": ["internal/store/entries.go"]
+  },
+  {
+    "query": "database open WAL mode init schema",
+    "relevant_files": ["internal/store/store.go"]
+  },
+  {
+    "query": "model changed dimensions mismatch rebuild",
+    "relevant_files": ["internal/store/meta.go"]
+  },
+  {
+    "query": "camelCase snake_case tokenizer split",
+    "relevant_files": ["internal/search/fts.go"]
+  },
+  {
+    "query": "search results hybrid vector keyword",
+    "relevant_files": ["internal/search/search.go"]
+  },
+  {
+    "query": "CLI subcommand serve index search status",
+    "relevant_files": ["cmd/poisk/main.go", "cmd/poisk/commands.go"]
+  },
+  {
+    "query": "reindex force clear source",
+    "relevant_files": ["internal/mcp/server.go"]
+  },
+  {
+    "query": "schema version migration drop recreate",
+    "relevant_files": ["internal/store/store.go", "internal/store/schema.go"]
+  },
+  {
+    "query": "supported languages extensions Go Python Rust",
+    "relevant_files": ["internal/chunk/treesitter.go"]
+  },
+  {
+    "query": "fixed window overlap source code chunker",
+    "relevant_files": ["internal/chunk/source.go"]
+  },
+  {
+    "query": "similarity threshold filter topK",
+    "relevant_files": ["internal/search/vec.go"]
+  },
+  {
+    "query": "FTS5 backfill virtual table",
+    "relevant_files": ["internal/store/store.go"]
+  },
+  {
+    "query": "folder stats files processed chunks created errors",
+    "relevant_files": ["internal/index/indexer.go"]
+  },
+  {
+    "query": "embedding meta model dimensions",
+    "relevant_files": ["internal/store/meta.go"]
+  },
+  {
+    "query": "tracked files mtime prune deleted",
+    "relevant_files": ["internal/store/files.go", "internal/index/indexer.go"]
+  },
+  {
+    "query": "chunk struct text start line end line language kind symbol",
+    "relevant_files": ["internal/chunk/chunk.go"]
+  },
+  {
+    "query": "query builder strict AND relaxed OR prefix",
+    "relevant_files": ["internal/search/fts.go"]
+  },
+  {
+    "query": "entry source filepath linenum embedding folder",
+    "relevant_files": ["internal/store/entries.go"]
+  }
+]
