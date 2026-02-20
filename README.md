@@ -6,11 +6,14 @@ Indexes source code and markdown files with embeddings into SQLite ([sqlite-vec]
 
 ## Features
 
-- **Hybrid search** — combines vector similarity (vec0 KNN) with keyword relevance (FTS5 BM25)
+- **Hybrid search** — combines vector similarity (vec0 KNN) with keyword relevance (FTS5 BM25), merged via Reciprocal Rank Fusion (RRF)
+- **Code-aware FTS** — tokenizer splits camelCase/snake_case, staged retrieval (strict AND → relaxed OR → prefix OR)
+- **Tree-sitter chunking** — AST-based code chunking for Go, Python, Rust, JavaScript, TypeScript (with JSX/TSX support)
+- **Markdown chunking** — heading-aware sections with breadcrumb paths, fence-aware splitting, large section token-budget splitting
 - **Incremental indexing** — tracks file mtimes, only re-embeds changed files
 - **Model change detection** — automatically rebuilds when embedding model or dimensions change
 - **MCP interface** — `search` and `reindex` tools + `poisk://index-status` resource
-- **Multiple folders** — index and search across multiple configured directories
+- **Multiple folders** — index and search across multiple configured directories with per-folder filtering
 
 ## Install
 
@@ -41,13 +44,12 @@ dimensions = 768
 batch_size = 50
 
 [search]
-vector_weight = 0.7
-text_weight = 0.3
-similarity_threshold = 0.3
+rrf_k = 60                  # Reciprocal Rank Fusion constant (higher = more weight to top results)
+similarity_threshold = 0.3   # Minimum cosine similarity for vector results
 default_top_k = 20
 
 [index]
-extensions = ["go", "py", "rs", "js", "ts", "md", "txt", "org"]
+languages = ["go", "python", "rust", "javascript", "typescript"]  # Tree-sitter supported languages
 exclude_patterns = [".git", "node_modules", "vendor", "__pycache__", ".venv"]
 max_file_size_kb = 512
 
@@ -59,6 +61,34 @@ description = "My application"
 path = "/home/user/notes"
 description = "Personal notes"
 ```
+
+### Minimal config
+
+Only `[[folders]]` is required — everything else has sensible defaults:
+
+```toml
+[[folders]]
+path = "/home/user/projects/myapp"
+description = "My Go project"
+```
+
+This uses Ollama with `nomic-embed-text` at `localhost:11434` and indexes Go, Python, Rust, JavaScript, TypeScript, plus markdown/text files.
+
+### Config reference
+
+| Section | Key | Default | Description |
+|---------|-----|---------|-------------|
+| `embedding` | `base_url` | `http://localhost:11434/v1` | OpenAI-compatible embedding API |
+| `embedding` | `api_key` | `""` | API key (empty for local Ollama) |
+| `embedding` | `model` | `nomic-embed-text` | Embedding model name |
+| `embedding` | `dimensions` | `768` | Embedding dimensions |
+| `embedding` | `batch_size` | `50` | Texts per embedding API call |
+| `search` | `rrf_k` | `60` | RRF fusion constant |
+| `search` | `similarity_threshold` | `0.3` | Min cosine similarity for vector results |
+| `search` | `default_top_k` | `20` | Default number of results |
+| `index` | `languages` | `["go","python","rust","javascript","typescript"]` | Languages for tree-sitter chunking |
+| `index` | `exclude_patterns` | `[".git","node_modules","vendor","__pycache__",".venv"]` | Directories to skip |
+| `index` | `max_file_size_kb` | `512` | Skip files larger than this |
 
 ## Usage
 
@@ -95,7 +125,7 @@ Add to your Claude Code MCP config:
 
 #### Tools
 
-- **search** — `{query, top_k?, folder?}` — hybrid semantic + keyword search
+- **search** — `{query, top_k?, folders?}` — hybrid semantic + keyword search, optionally filtered to specific folders
 - **reindex** — `{folder?, force?}` — re-index configured folders
 
 #### Resources
@@ -108,12 +138,13 @@ Add to your Claude Code MCP config:
 cmd/poisk/           CLI entry point (serve/index/search/status)
 internal/
   config/            TOML config parsing
-  store/             SQLite + sqlite-vec + FTS5 storage layer
+  store/             SQLite + sqlite-vec + FTS5 storage layer (schema v2)
   embed/             OpenAI-compatible embedding client
-  chunk/             Markdown paragraph + source code chunkers
-  index/             Incremental file indexer
-  search/            Hybrid vec0 KNN + FTS5 BM25 search
+  chunk/             Tree-sitter AST chunking + markdown section chunking + fixed-window fallback
+  index/             Incremental file indexer with mtime tracking
+  search/            RRF fusion of vec0 KNN + staged FTS5 BM25
   mcp/               MCP server (tools + resources)
+testdata/eval/       Evaluation harness queries (30 gold queries)
 ```
 
 ## Database
@@ -121,7 +152,8 @@ internal/
 SQLite with WAL mode. Data stored at `~/.local/share/poisk/poisk.db`.
 
 - `embedding_files` — file mtime tracking for incremental indexing
-- `embeddings` — chunk text + embedding BLOBs (little-endian f32)
+- `embeddings` — chunk text + embedding BLOBs (little-endian f32) with metadata (end_line, language, chunk_kind, symbol)
 - `embedding_meta` — model/dimensions per source for change detection
 - `vec_embeddings` — sqlite-vec virtual table for KNN search
 - `chunks_fts` — FTS5 virtual table for keyword search
+- `schema_version` — tracks schema version for automatic migration

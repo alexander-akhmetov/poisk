@@ -1,0 +1,39 @@
+# poisk configuration
+# Copy to ~/.config/poisk/config.toml and adjust to your setup.
+
+[embedding]
+# Any OpenAI-compatible embedding API (Ollama, LM Studio, OpenAI, etc.)
+base_url = "http://localhost:11434/v1"
+api_key = ""
+model = "nomic-embed-text"
+dimensions = 768
+batch_size = 50
+
+[search]
+# Reciprocal Rank Fusion constant (higher = more weight to top-ranked results)
+rrf_k = 60
+# Minimum cosine similarity for vector search results (0.0-1.0)
+similarity_threshold = 0.3
+# Default number of results returned
+default_top_k = 20
+
+[index]
+# Languages for tree-sitter AST chunking.
+# Supported: go, python, rust, javascript, typescript
+# Markdown (.md), text (.txt), and org (.org) files are always indexed.
+languages = ["go", "python", "rust", "javascript", "typescript"]
+# Directories to skip during scanning
+exclude_patterns = [".git", "node_modules", "vendor", "__pycache__", ".venv", "dist", "build"]
+# Skip files larger than this (in KB)
+max_file_size_kb = 512
+
+# Add one or more [[folders]] sections to index.
+# Each folder is indexed independently and can be filtered in search queries.
+
+[[folders]]
+path = "/home/user/projects/myapp"
+description = "My application"
+
+# [[folders]]
+# path = "/home/user/notes"
+# description = "Personal notes"
