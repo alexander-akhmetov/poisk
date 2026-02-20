@@ -2,6 +2,7 @@ package index
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"sync"
@@ -62,7 +63,9 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 	}
 	if changed {
 		slog.Info("model changed, rebuilding", "folder", folder)
-		ix.store.ClearSource(folder)
+		if err := ix.store.ClearSource(folder); err != nil {
+			return stats, fmt.Errorf("clear source %s: %w", folder, err)
+		}
 	}
 
 	// Scan files
@@ -84,7 +87,10 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 	}
 	for fp := range tracked {
 		if !currentSet[fp] {
-			ix.store.DeleteFile(folder, fp)
+			if err := ix.store.DeleteFile(folder, fp); err != nil {
+				slog.Error("delete stale file failed", "file", fp, "error", err)
+				stats.Errors++
+			}
 		}
 	}
 
@@ -115,10 +121,14 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 			continue
 		}
 
-		chunks := chunk.ChunkFile(filePath, string(content))
+		chunks := chunk.File(filePath, string(content))
 		if len(chunks) == 0 {
-			ix.store.SetFileMtime(folder, filePath, mtime)
-			stats.FilesSkipped++
+			if err := ix.store.SetFileMtime(folder, filePath, mtime); err != nil {
+				slog.Error("set mtime failed", "file", filePath, "error", err)
+				stats.Errors++
+			} else {
+				stats.FilesSkipped++
+			}
 			continue
 		}
 
@@ -165,14 +175,20 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 				stats.Errors++
 				continue
 			}
-			ix.store.SetFileMtime(folder, filePath, mtime)
+			if err := ix.store.SetFileMtime(folder, filePath, mtime); err != nil {
+				slog.Error("set mtime failed", "file", filePath, "error", err)
+				stats.Errors++
+				continue
+			}
 			stats.FilesProcessed++
 			stats.ChunksCreated += len(entries)
 		}
 	}
 
 	// Update meta
-	ix.store.UpdateMeta(folder, ix.cfg.Embedding.Model, ix.cfg.Embedding.Dimensions)
+	if err := ix.store.UpdateMeta(folder, ix.cfg.Embedding.Model, ix.cfg.Embedding.Dimensions); err != nil {
+		return stats, fmt.Errorf("update meta for %s: %w", folder, err)
+	}
 
 	return stats, nil
 }

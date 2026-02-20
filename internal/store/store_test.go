@@ -6,11 +6,11 @@ import (
 	"testing"
 )
 
-func openTestStore(t *testing.T, dims int) *Store {
+func openTestStore(t *testing.T) *Store {
 	t.Helper()
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")
-	s, err := Open(dbPath, dims)
+	s, err := Open(dbPath, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -19,14 +19,14 @@ func openTestStore(t *testing.T, dims int) *Store {
 }
 
 func TestStoreOpenClose(t *testing.T) {
-	s := openTestStore(t, 3)
+	s := openTestStore(t)
 	if !s.VecAvailable() {
 		t.Skip("vec0 not available")
 	}
 }
 
 func TestFileMtimeCRUD(t *testing.T) {
-	s := openTestStore(t, 3)
+	s := openTestStore(t)
 
 	// Get unknown
 	_, ok, err := s.GetFileMtime("src", "test.go")
@@ -47,14 +47,18 @@ func TestFileMtimeCRUD(t *testing.T) {
 	}
 
 	// Update
-	s.SetFileMtime("src", "test.go", 67890)
+	if err := s.SetFileMtime("src", "test.go", 67890); err != nil {
+		t.Fatal(err)
+	}
 	mt, _, _ = s.GetFileMtime("src", "test.go")
 	if mt != 67890 {
 		t.Fatalf("got mtime=%d, want 67890", mt)
 	}
 
 	// Delete
-	s.DeleteFile("src", "test.go")
+	if err := s.DeleteFile("src", "test.go"); err != nil {
+		t.Fatal(err)
+	}
 	_, ok, _ = s.GetFileMtime("src", "test.go")
 	if ok {
 		t.Fatal("expected deleted")
@@ -62,11 +66,17 @@ func TestFileMtimeCRUD(t *testing.T) {
 }
 
 func TestTrackedFiles(t *testing.T) {
-	s := openTestStore(t, 3)
+	s := openTestStore(t)
 
-	s.SetFileMtime("src", "a.go", 100)
-	s.SetFileMtime("src", "b.go", 200)
-	s.SetFileMtime("other", "c.go", 300)
+	if err := s.SetFileMtime("src", "a.go", 100); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetFileMtime("src", "b.go", 200); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetFileMtime("other", "c.go", 300); err != nil {
+		t.Fatal(err)
+	}
 
 	m, err := s.TrackedFiles("src")
 	if err != nil {
@@ -81,7 +91,7 @@ func TestTrackedFiles(t *testing.T) {
 }
 
 func TestInsertAndCount(t *testing.T) {
-	s := openTestStore(t, 3)
+	s := openTestStore(t)
 
 	entries := []Entry{
 		{LineNum: 1, Text: "hello", Embedding: []float32{1, 0, 0}},
@@ -107,14 +117,16 @@ func TestInsertAndCount(t *testing.T) {
 }
 
 func TestModelChanged(t *testing.T) {
-	s := openTestStore(t, 3)
+	s := openTestStore(t)
 
 	changed, _ := s.ModelChanged("src", "model-v1", 768)
 	if !changed {
 		t.Fatal("expected changed for new source")
 	}
 
-	s.UpdateMeta("src", "model-v1", 768)
+	if err := s.UpdateMeta("src", "model-v1", 768); err != nil {
+		t.Fatal(err)
+	}
 	changed, _ = s.ModelChanged("src", "model-v1", 768)
 	if changed {
 		t.Fatal("expected not changed")
@@ -127,15 +139,23 @@ func TestModelChanged(t *testing.T) {
 }
 
 func TestClearSource(t *testing.T) {
-	s := openTestStore(t, 3)
+	s := openTestStore(t)
 
-	s.SetFileMtime("src", "f.go", 111)
-	s.InsertEntries("src", "f.go", []Entry{
+	if err := s.SetFileMtime("src", "f.go", 111); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.InsertEntries("src", "f.go", []Entry{
 		{LineNum: 1, Text: "test", Embedding: []float32{1, 0, 0}},
-	})
-	s.UpdateMeta("src", "model", 3)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateMeta("src", "model", 3); err != nil {
+		t.Fatal(err)
+	}
 
-	s.ClearSource("src")
+	if err := s.ClearSource("src"); err != nil {
+		t.Fatal(err)
+	}
 
 	count, _ := s.Count("src")
 	if count != 0 {

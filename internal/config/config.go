@@ -116,5 +116,14 @@ func (c *Config) validate() error {
 	if c.Search.DefaultTopK <= 0 {
 		return fmt.Errorf("search.default_top_k must be > 0")
 	}
+	if c.Search.VectorWeight < 0 || c.Search.VectorWeight > 1 {
+		return fmt.Errorf("search.vector_weight must be between 0 and 1, got %v", c.Search.VectorWeight)
+	}
+	if c.Search.TextWeight < 0 || c.Search.TextWeight > 1 {
+		return fmt.Errorf("search.text_weight must be between 0 and 1, got %v", c.Search.TextWeight)
+	}
+	if c.Search.SimilarityThreshold < 0 || c.Search.SimilarityThreshold > 1 {
+		return fmt.Errorf("search.similarity_threshold must be between 0 and 1, got %v", c.Search.SimilarityThreshold)
+	}
 	return nil
 }

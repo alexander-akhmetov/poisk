@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 )
 
@@ -11,18 +12,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	var err error
 	switch os.Args[1] {
 	case "serve":
-		cmdServe()
+		err = cmdServe()
 	case "index":
-		cmdIndex()
+		err = cmdIndex()
 	case "search":
-		cmdSearch()
+		err = cmdSearch()
 	case "status":
-		cmdStatus()
+		err = cmdStatus()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		usage()
+		os.Exit(1)
+	}
+
+	if err != nil {
+		slog.Error("fatal", "error", err)
 		os.Exit(1)
 	}
 }

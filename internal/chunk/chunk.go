@@ -10,7 +10,7 @@ type Chunk struct {
 	LineNum int
 }
 
-func ChunkFile(path, content string) []Chunk {
+func File(path, content string) []Chunk {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".md", ".markdown":

@@ -1,17 +1,14 @@
 package store
 
-import (
-	"fmt"
-	"log/slog"
-)
+import "fmt"
 
 type Entry struct {
-	Source   string
-	FilePath string
-	LineNum  int
-	Text     string
+	Source    string
+	FilePath  string
+	LineNum   int
+	Text      string
 	Embedding []float32
-	Folder   string
+	Folder    string
 }
 
 func (s *Store) InsertEntries(source, filePath string, entries []Entry) error {
@@ -19,7 +16,7 @@ func (s *Store) InsertEntries(source, filePath string, entries []Entry) error {
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Delete vec0 rows first (needs old IDs)
 	if s.vecAvailable {
@@ -27,7 +24,7 @@ func (s *Store) InsertEntries(source, filePath string, entries []Entry) error {
 			"DELETE FROM vec_embeddings WHERE rowid IN (SELECT id FROM embeddings WHERE source = ? AND file_path = ?)",
 			source, filePath,
 		); err != nil {
-			slog.Warn("vec0 sync delete failed", "error", err)
+			return fmt.Errorf("vec0 sync delete: %w", err)
 		}
 	}
 
@@ -37,7 +34,7 @@ func (s *Store) InsertEntries(source, filePath string, entries []Entry) error {
 			"DELETE FROM chunks_fts WHERE source = ? AND file_path = ?",
 			source, filePath,
 		); err != nil {
-			slog.Warn("FTS5 sync delete failed", "error", err)
+			return fmt.Errorf("FTS5 sync delete: %w", err)
 		}
 	}
 
@@ -64,7 +61,7 @@ func (s *Store) InsertEntries(source, filePath string, entries []Entry) error {
 
 		if s.vecAvailable {
 			if _, err := tx.Exec("INSERT INTO vec_embeddings (rowid, embedding) VALUES (?, ?)", rowid, blob); err != nil {
-				slog.Warn("vec0 sync insert failed", "error", err)
+				return fmt.Errorf("vec0 sync insert: %w", err)
 			}
 		}
 
@@ -73,7 +70,7 @@ func (s *Store) InsertEntries(source, filePath string, entries []Entry) error {
 				"INSERT INTO chunks_fts(chunk_text, id, source, file_path, line_num, folder) VALUES (?, ?, ?, ?, ?, ?)",
 				e.Text, fmt.Sprintf("%d", rowid), source, filePath, fmt.Sprintf("%d", e.LineNum), e.Folder,
 			); err != nil {
-				slog.Warn("FTS5 sync insert failed", "error", err)
+				return fmt.Errorf("FTS5 sync insert: %w", err)
 			}
 		}
 	}
@@ -89,16 +86,26 @@ func (s *Store) Count(source string) (int, error) {
 
 func (s *Store) ClearSource(source string) error {
 	if s.vecAvailable {
-		s.db.Exec(
+		if _, err := s.db.Exec(
 			"DELETE FROM vec_embeddings WHERE rowid IN (SELECT id FROM embeddings WHERE source = ?)",
 			source,
-		)
+		); err != nil {
+			return fmt.Errorf("clear vec_embeddings: %w", err)
+		}
 	}
 	if s.ftsAvailable {
-		s.db.Exec("DELETE FROM chunks_fts WHERE source = ?", source)
+		if _, err := s.db.Exec("DELETE FROM chunks_fts WHERE source = ?", source); err != nil {
+			return fmt.Errorf("clear chunks_fts: %w", err)
+		}
 	}
-	s.db.Exec("DELETE FROM embeddings WHERE source = ?", source)
-	s.db.Exec("DELETE FROM embedding_files WHERE source = ?", source)
-	s.db.Exec("DELETE FROM embedding_meta WHERE source = ?", source)
+	if _, err := s.db.Exec("DELETE FROM embeddings WHERE source = ?", source); err != nil {
+		return fmt.Errorf("clear embeddings: %w", err)
+	}
+	if _, err := s.db.Exec("DELETE FROM embedding_files WHERE source = ?", source); err != nil {
+		return fmt.Errorf("clear embedding_files: %w", err)
+	}
+	if _, err := s.db.Exec("DELETE FROM embedding_meta WHERE source = ?", source); err != nil {
+		return fmt.Errorf("clear embedding_meta: %w", err)
+	}
 	return nil
 }

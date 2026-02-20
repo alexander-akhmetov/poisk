@@ -13,10 +13,7 @@ func chunkSource(content string) []Chunk {
 	var chunks []Chunk
 
 	for start := 0; start < len(lines); start += windowSize - overlap {
-		end := start + windowSize
-		if end > len(lines) {
-			end = len(lines)
-		}
+		end := min(start+windowSize, len(lines))
 
 		text := strings.TrimSpace(strings.Join(lines[start:end], "\n"))
 		if len(text) < minChars {

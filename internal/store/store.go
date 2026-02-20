@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/mattn/go-sqlite3" // SQLite driver
 )
 
 func init() {
@@ -80,7 +80,9 @@ func (s *Store) initVec0() {
 		}
 		if needsDrop {
 			slog.Info("vec0 dimensions mismatch, recreating", "new", s.dimensions)
-			s.db.Exec("DROP TABLE IF EXISTS vec_embeddings")
+			if _, err := s.db.Exec("DROP TABLE IF EXISTS vec_embeddings"); err != nil {
+				slog.Warn("failed to drop vec_embeddings", "error", err)
+			}
 		}
 	}
 
@@ -114,7 +116,7 @@ func (s *Store) Dimensions() int { return s.dimensions }
 
 func splitStatements(ddl string) []string {
 	var stmts []string
-	for _, s := range strings.Split(ddl, ";") {
+	for s := range strings.SplitSeq(ddl, ";") {
 		s = strings.TrimSpace(s)
 		if s != "" {
 			stmts = append(stmts, s)
@@ -122,4 +124,3 @@ func splitStatements(ddl string) []string {
 	}
 	return stmts
 }
-

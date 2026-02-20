@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 )
 
 func (s *Store) GetFileMtime(source, filePath string) (int64, bool, error) {
@@ -31,19 +32,23 @@ func (s *Store) SetFileMtime(source, filePath string, mtime int64) error {
 
 func (s *Store) DeleteFile(source, filePath string) error {
 	if s.vecAvailable {
-		s.db.Exec(
+		if _, err := s.db.Exec(
 			"DELETE FROM vec_embeddings WHERE rowid IN (SELECT id FROM embeddings WHERE source = ? AND file_path = ?)",
 			source, filePath,
-		)
+		); err != nil {
+			return fmt.Errorf("delete vec_embeddings: %w", err)
+		}
 	}
 	if s.ftsAvailable {
-		s.db.Exec(
+		if _, err := s.db.Exec(
 			"DELETE FROM chunks_fts WHERE source = ? AND file_path = ?",
 			source, filePath,
-		)
+		); err != nil {
+			return fmt.Errorf("delete chunks_fts: %w", err)
+		}
 	}
 	if _, err := s.db.Exec("DELETE FROM embeddings WHERE source = ? AND file_path = ?", source, filePath); err != nil {
-		return err
+		return fmt.Errorf("delete embeddings: %w", err)
 	}
 	_, err := s.db.Exec("DELETE FROM embedding_files WHERE source = ? AND file_path = ?", source, filePath)
 	return err

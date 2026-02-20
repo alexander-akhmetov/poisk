@@ -41,11 +41,14 @@ func registerTools(server *gomcp.Server, indexer *index.Indexer, searcher *searc
 		Description: "Search indexed source code and documents using hybrid semantic + keyword search",
 	}, func(ctx context.Context, _ *gomcp.CallToolRequest, args SearchInput) (*gomcp.CallToolResult, any, error) {
 		results, err := searcher.Search(ctx, args.Query, args.TopK, args.Folder)
-		if err != nil {
+		if err != nil && len(results) == 0 {
 			return nil, nil, fmt.Errorf("search: %w", err)
 		}
 
 		var sb strings.Builder
+		if err != nil {
+			fmt.Fprintf(&sb, "WARNING: partial search failure: %v\n\n", err)
+		}
 		if len(results) == 0 {
 			sb.WriteString("No results found.")
 		} else {
@@ -77,10 +80,14 @@ func registerTools(server *gomcp.Server, indexer *index.Indexer, searcher *searc
 		}
 
 		if args.Force && args.Folder != "" {
-			db.ClearSource(args.Folder)
+			if err := db.ClearSource(args.Folder); err != nil {
+				return nil, nil, fmt.Errorf("clear source %s: %w", args.Folder, err)
+			}
 		} else if args.Force {
 			for _, f := range cfg.Folders {
-				db.ClearSource(f.Path)
+				if err := db.ClearSource(f.Path); err != nil {
+					return nil, nil, fmt.Errorf("clear source %s: %w", f.Path, err)
+				}
 			}
 		}
 
@@ -119,7 +126,7 @@ func registerTools(server *gomcp.Server, indexer *index.Indexer, searcher *searc
 			"fts_available": db.FTSAvailable(),
 		}
 
-		var folders []map[string]any
+		folders := make([]map[string]any, 0, len(cfg.Folders))
 		for _, f := range cfg.Folders {
 			count, _ := db.Count(f.Path)
 			fileCount, _ := db.TrackedFileCount(f.Path)

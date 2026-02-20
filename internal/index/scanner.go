@@ -1,6 +1,7 @@
 package index
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,8 @@ func scanFolder(root string, extensions []string, excludePatterns []string, maxS
 
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil // skip errors
+			slog.Warn("scan error", "path", path, "error", err)
+			return nil
 		}
 
 		name := d.Name()
@@ -38,6 +40,7 @@ func scanFolder(root string, extensions []string, excludePatterns []string, maxS
 
 		info, err := d.Info()
 		if err != nil {
+			slog.Warn("stat failed", "path", path, "error", err)
 			return nil
 		}
 		if info.Size() > maxBytes {

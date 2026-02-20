@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -18,17 +17,15 @@ import (
 	"github.com/akhmetov/poisk/internal/store"
 )
 
-func cmdServe() {
+func cmdServe() error {
 	cfg, err := config.Load()
 	if err != nil {
-		slog.Error("load config", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	db, err := store.Open(config.DBPath(), cfg.Embedding.Dimensions)
 	if err != nil {
-		slog.Error("open database", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("open database: %w", err)
 	}
 	defer db.Close()
 
@@ -40,22 +37,20 @@ func cmdServe() {
 	defer stop()
 
 	if err := mcpserver.Run(ctx, indexer, searcher, db, cfg); err != nil {
-		slog.Error("mcp server", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("mcp server: %w", err)
 	}
+	return nil
 }
 
-func cmdIndex() {
+func cmdIndex() error {
 	cfg, err := config.Load()
 	if err != nil {
-		slog.Error("load config", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	db, err := store.Open(config.DBPath(), cfg.Embedding.Dimensions)
 	if err != nil {
-		slog.Error("open database", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("open database: %w", err)
 	}
 	defer db.Close()
 
@@ -65,33 +60,30 @@ func cmdIndex() {
 	ctx := context.Background()
 	stats, err := indexer.IndexAll(ctx)
 	if err != nil {
-		slog.Error("indexing failed", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("indexing: %w", err)
 	}
 
 	for _, s := range stats {
 		fmt.Fprintf(os.Stderr, "%-40s files=%d chunks=%d skipped=%d errors=%d\n",
 			s.Folder, s.FilesProcessed, s.ChunksCreated, s.FilesSkipped, s.Errors)
 	}
+	return nil
 }
 
-func cmdSearch() {
+func cmdSearch() error {
 	if len(os.Args) < 3 {
-		fmt.Fprintf(os.Stderr, "Usage: poisk search <query>\n")
-		os.Exit(1)
+		return fmt.Errorf("usage: poisk search <query>")
 	}
 	query := strings.Join(os.Args[2:], " ")
 
 	cfg, err := config.Load()
 	if err != nil {
-		slog.Error("load config", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	db, err := store.Open(config.DBPath(), cfg.Embedding.Dimensions)
 	if err != nil {
-		slog.Error("open database", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("open database: %w", err)
 	}
 	defer db.Close()
 
@@ -101,26 +93,24 @@ func cmdSearch() {
 	ctx := context.Background()
 	results, err := searcher.Search(ctx, query, cfg.Search.DefaultTopK, "")
 	if err != nil {
-		slog.Error("search failed", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("search: %w", err)
 	}
 
 	for _, r := range results {
 		fmt.Printf("[%.2f] %s:%d  %s\n", r.Score, r.FilePath, r.LineNum, truncate(r.Text, 100))
 	}
+	return nil
 }
 
-func cmdStatus() {
+func cmdStatus() error {
 	cfg, err := config.Load()
 	if err != nil {
-		slog.Error("load config", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	db, err := store.Open(config.DBPath(), cfg.Embedding.Dimensions)
 	if err != nil {
-		slog.Error("open database", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("open database: %w", err)
 	}
 	defer db.Close()
 
@@ -146,7 +136,7 @@ func cmdStatus() {
 
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	enc.Encode(status)
+	return enc.Encode(status)
 }
 
 type FolderStatus struct {

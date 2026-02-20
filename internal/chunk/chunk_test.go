@@ -16,7 +16,7 @@ Here are some more details about the topic that should form another chunk.
 
 Some additional content that follows without a heading.
 `
-	chunks := ChunkFile("test.md", content)
+	chunks := File("test.md", content)
 	if len(chunks) < 2 {
 		t.Fatalf("got %d chunks, want >= 2", len(chunks))
 	}
@@ -37,7 +37,7 @@ Short.
 
 This paragraph has enough text to be included as a chunk in the output.
 `
-	chunks := ChunkFile("test.md", content)
+	chunks := File("test.md", content)
 	for _, c := range chunks {
 		if c.Text == "Short." || strings.HasSuffix(c.Text, "\n\nShort.") {
 			t.Error("short paragraph should be skipped")
@@ -52,7 +52,7 @@ func TestChunkSource(t *testing.T) {
 	}
 	content := strings.Join(lines, "\n")
 
-	chunks := ChunkFile("test.go", content)
+	chunks := File("test.go", content)
 	if len(chunks) < 2 {
 		t.Fatalf("got %d chunks, want >= 2", len(chunks))
 	}
@@ -65,7 +65,7 @@ func TestChunkSource(t *testing.T) {
 
 func TestChunkSourceShortFile(t *testing.T) {
 	content := "package main\n\nfunc main() {}\n"
-	chunks := ChunkFile("main.go", content)
+	chunks := File("main.go", content)
 	if len(chunks) != 1 {
 		t.Fatalf("got %d chunks, want 1", len(chunks))
 	}
@@ -73,7 +73,7 @@ func TestChunkSourceShortFile(t *testing.T) {
 
 func TestChunkSourceTooShort(t *testing.T) {
 	content := "// hi\n"
-	chunks := ChunkFile("tiny.go", content)
+	chunks := File("tiny.go", content)
 	if len(chunks) != 0 {
 		t.Fatalf("got %d chunks, want 0 for tiny file", len(chunks))
 	}

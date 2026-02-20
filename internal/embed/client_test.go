@@ -1,4 +1,4 @@
-package embed
+package embed //nolint:revive // internal package, no conflict with stdlib embed
 
 import (
 	"context"
@@ -18,7 +18,9 @@ func TestEmbedBatch(t *testing.T) {
 		}
 
 		var req embeddingRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
 		if req.Model != "test-model" {
 			t.Errorf("model = %s, want test-model", req.Model)
 		}
@@ -35,7 +37,9 @@ func TestEmbedBatch(t *testing.T) {
 			resp.Data[i].Embedding[0] = float32(i)
 		}
 
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Fatal(err)
+		}
 	}))
 	defer server.Close()
 
@@ -67,7 +71,7 @@ func TestEmbedBatchEmpty(t *testing.T) {
 }
 
 func TestEmbedBatchDimensionMismatch(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		resp := embeddingResponse{
 			Data: []struct {
 				Embedding []float32 `json:"embedding"`
@@ -76,7 +80,9 @@ func TestEmbedBatchDimensionMismatch(t *testing.T) {
 				{Embedding: []float32{1, 2}, Index: 0}, // wrong dimensions
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Fatal(err)
+		}
 	}))
 	defer server.Close()
 
@@ -101,7 +107,9 @@ func TestEmbedBatchAuthHeader(t *testing.T) {
 				{Embedding: []float32{1, 2, 3}, Index: 0},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Fatal(err)
+		}
 	}))
 	defer server.Close()
 

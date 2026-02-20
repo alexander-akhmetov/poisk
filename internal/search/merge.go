@@ -57,7 +57,7 @@ func mergeResults(vecResults, ftsResults []Result, vecWeight, textWeight float64
 
 	results := make([]Result, 0, len(m))
 	for _, v := range m {
-		v.Result.Score = vecWeight*v.vecScore + textWeight*v.ftsScore
+		v.Score = vecWeight*v.vecScore + textWeight*v.ftsScore
 		results = append(results, v.Result)
 	}
 
