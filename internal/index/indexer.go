@@ -95,8 +95,10 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 		}
 	}
 
+	slog.Info("indexing folder", "folder", folder, "files", len(files))
+
 	// Process changed files
-	for _, filePath := range files {
+	for i, filePath := range files {
 		select {
 		case <-ctx.Done():
 			return stats, ctx.Err()
@@ -193,8 +195,11 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 			}
 			stats.FilesProcessed++
 			stats.ChunksCreated += len(entries)
+			slog.Info("indexed file", "file", filePath, "chunks", len(entries), "progress", fmt.Sprintf("%d/%d", i+1, len(files)))
 		}
 	}
+
+	slog.Info("folder done", "folder", folder, "processed", stats.FilesProcessed, "skipped", stats.FilesSkipped, "chunks", stats.ChunksCreated, "errors", stats.Errors)
 
 	// Update meta
 	if err := ix.store.UpdateMeta(folder, ix.cfg.Embedding.Model, ix.cfg.Embedding.Dimensions); err != nil {

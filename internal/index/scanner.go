@@ -83,5 +83,6 @@ func scanFolder(root string, languages, extensions []string, excludePatterns []s
 		return nil
 	})
 
+	slog.Info("scan complete", "folder", root, "files_found", len(files))
 	return files, err
 }

@@ -75,5 +75,7 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int, folders [
 		searchErr = errors.Join(vecErr, ftsErr)
 	}
 
-	return mergeResults(vecResults, ftsResults, s.cfg.Search.RRFk, topK), searchErr
+	merged := mergeResults(vecResults, ftsResults, s.cfg.Search.RRFk, topK)
+	slog.Info("search complete", "query", query, "vec_results", len(vecResults), "fts_results", len(ftsResults), "merged", len(merged))
+	return merged, searchErr
 }
