@@ -1,0 +1,113 @@
+package embed
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestEmbedBatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/embeddings" {
+			t.Errorf("path = %s, want /embeddings", r.URL.Path)
+		}
+
+		var req embeddingRequest
+		json.NewDecoder(r.Body).Decode(&req)
+		if req.Model != "test-model" {
+			t.Errorf("model = %s, want test-model", req.Model)
+		}
+
+		resp := embeddingResponse{
+			Data: make([]struct {
+				Embedding []float32 `json:"embedding"`
+				Index     int       `json:"index"`
+			}, len(req.Input)),
+		}
+		for i := range req.Input {
+			resp.Data[i].Index = i
+			resp.Data[i].Embedding = make([]float32, 3)
+			resp.Data[i].Embedding[0] = float32(i)
+		}
+
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "", "test-model", 3)
+	embeddings, err := client.EmbedBatch(context.Background(), []string{"hello", "world"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(embeddings) != 2 {
+		t.Fatalf("got %d embeddings, want 2", len(embeddings))
+	}
+	if embeddings[0][0] != 0 {
+		t.Errorf("first embedding[0] = %f, want 0", embeddings[0][0])
+	}
+	if embeddings[1][0] != 1 {
+		t.Errorf("second embedding[0] = %f, want 1", embeddings[1][0])
+	}
+}
+
+func TestEmbedBatchEmpty(t *testing.T) {
+	client := NewClient("http://unused", "", "model", 3)
+	embeddings, err := client.EmbedBatch(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if embeddings != nil {
+		t.Fatal("expected nil for empty input")
+	}
+}
+
+func TestEmbedBatchDimensionMismatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := embeddingResponse{
+			Data: []struct {
+				Embedding []float32 `json:"embedding"`
+				Index     int       `json:"index"`
+			}{
+				{Embedding: []float32{1, 2}, Index: 0}, // wrong dimensions
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "", "model", 3)
+	_, err := client.EmbedBatch(context.Background(), []string{"test"})
+	if err == nil {
+		t.Fatal("expected dimension mismatch error")
+	}
+}
+
+func TestEmbedBatchAuthHeader(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if auth != "Bearer test-key" {
+			t.Errorf("auth = %s, want Bearer test-key", auth)
+		}
+		resp := embeddingResponse{
+			Data: []struct {
+				Embedding []float32 `json:"embedding"`
+				Index     int       `json:"index"`
+			}{
+				{Embedding: []float32{1, 2, 3}, Index: 0},
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-key", "model", 3)
+	_, err := client.EmbedBatch(context.Background(), []string{"test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
