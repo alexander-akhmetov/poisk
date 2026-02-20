@@ -118,6 +118,8 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 			continue
 		}
 
+		slog.Info("processing file", "file", filePath, "progress", fmt.Sprintf("%d/%d", i+1, len(files)))
+
 		content, err := os.ReadFile(filePath)
 		if err != nil {
 			stats.Errors++
@@ -195,7 +197,6 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 			}
 			stats.FilesProcessed++
 			stats.ChunksCreated += len(entries)
-			slog.Info("indexed file", "file", filePath, "chunks", len(entries), "progress", fmt.Sprintf("%d/%d", i+1, len(files)))
 		}
 	}
 
