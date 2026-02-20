@@ -32,7 +32,7 @@ type EmbeddingConfig struct {
 	Model          string `toml:"model"`
 	Dimensions     int    `toml:"dimensions"`
 	BatchSize      int    `toml:"batch_size"`
-	OmitDimensions bool   `toml:"omit_dimensions"` // don't send dimensions param in API request
+	SendDimensions bool   `toml:"send_dimensions"` // send dimensions param in API request
 }
 
 type SearchConfig struct {
