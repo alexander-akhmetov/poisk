@@ -27,11 +27,12 @@ type Config struct {
 }
 
 type EmbeddingConfig struct {
-	BaseURL    string `toml:"base_url"`
-	APIKey     string `toml:"api_key"`
-	Model      string `toml:"model"`
-	Dimensions int    `toml:"dimensions"`
-	BatchSize  int    `toml:"batch_size"`
+	BaseURL        string `toml:"base_url"`
+	APIKey         string `toml:"api_key"`
+	Model          string `toml:"model"`
+	Dimensions     int    `toml:"dimensions"`
+	BatchSize      int    `toml:"batch_size"`
+	OmitDimensions bool   `toml:"omit_dimensions"` // don't send dimensions param in API request
 }
 
 type SearchConfig struct {

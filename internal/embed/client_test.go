@@ -43,7 +43,7 @@ func TestEmbedBatch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "", "test-model", 3)
+	client := NewClient(server.URL, "", "test-model", 3, true)
 	embeddings, err := client.EmbedBatch(context.Background(), []string{"hello", "world"})
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +60,7 @@ func TestEmbedBatch(t *testing.T) {
 }
 
 func TestEmbedBatchEmpty(t *testing.T) {
-	client := NewClient("http://unused", "", "model", 3)
+	client := NewClient("http://unused", "", "model", 3, true)
 	embeddings, err := client.EmbedBatch(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +86,7 @@ func TestEmbedBatchDimensionMismatch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "", "model", 3)
+	client := NewClient(server.URL, "", "model", 3, true)
 	_, err := client.EmbedBatch(context.Background(), []string{"test"})
 	if err == nil {
 		t.Fatal("expected dimension mismatch error")
@@ -113,7 +113,7 @@ func TestEmbedBatchAuthHeader(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key", "model", 3)
+	client := NewClient(server.URL, "test-key", "model", 3, true)
 	_, err := client.EmbedBatch(context.Background(), []string{"test"})
 	if err != nil {
 		t.Fatal(err)

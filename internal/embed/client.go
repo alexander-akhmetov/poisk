@@ -11,20 +11,22 @@ import (
 )
 
 type Client struct {
-	baseURL    string
-	apiKey     string
-	model      string
-	dimensions int
-	http       *http.Client
+	baseURL        string
+	apiKey         string
+	model          string
+	dimensions     int
+	sendDimensions bool
+	http           *http.Client
 }
 
-func NewClient(baseURL, apiKey, model string, dimensions int) *Client {
+func NewClient(baseURL, apiKey, model string, dimensions int, sendDimensions bool) *Client {
 	return &Client{
-		baseURL:    baseURL,
-		apiKey:     apiKey,
-		model:      model,
-		dimensions: dimensions,
-		http:       &http.Client{Timeout: 120 * time.Second},
+		baseURL:        baseURL,
+		apiKey:         apiKey,
+		model:          model,
+		dimensions:     dimensions,
+		sendDimensions: sendDimensions,
+		http:           &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
@@ -47,9 +49,11 @@ func (c *Client) EmbedBatch(ctx context.Context, texts []string) ([][]float32, e
 	}
 
 	body := embeddingRequest{
-		Model:      c.model,
-		Input:      texts,
-		Dimensions: c.dimensions,
+		Model: c.model,
+		Input: texts,
+	}
+	if c.sendDimensions {
+		body.Dimensions = c.dimensions
 	}
 
 	jsonBody, err := json.Marshal(body)

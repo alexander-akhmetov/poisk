@@ -31,7 +31,7 @@ func cmdServe() error {
 	}
 	defer db.Close()
 
-	client := embed.NewClient(cfg.Embedding.BaseURL, cfg.Embedding.APIKey, cfg.Embedding.Model, cfg.Embedding.Dimensions)
+	client := embed.NewClient(cfg.Embedding.BaseURL, cfg.Embedding.APIKey, cfg.Embedding.Model, cfg.Embedding.Dimensions, !cfg.Embedding.OmitDimensions)
 	indexer := index.NewIndexer(db, client, cfg)
 	searcher := search.NewSearcher(db, client, cfg)
 
@@ -75,7 +75,7 @@ func cmdIndex() error {
 	}
 	defer db.Close()
 
-	client := embed.NewClient(cfg.Embedding.BaseURL, cfg.Embedding.APIKey, cfg.Embedding.Model, cfg.Embedding.Dimensions)
+	client := embed.NewClient(cfg.Embedding.BaseURL, cfg.Embedding.APIKey, cfg.Embedding.Model, cfg.Embedding.Dimensions, !cfg.Embedding.OmitDimensions)
 	indexer := index.NewIndexer(db, client, cfg)
 
 	if !watch {
@@ -135,7 +135,7 @@ func cmdSearch() error {
 	}
 	defer db.Close()
 
-	client := embed.NewClient(cfg.Embedding.BaseURL, cfg.Embedding.APIKey, cfg.Embedding.Model, cfg.Embedding.Dimensions)
+	client := embed.NewClient(cfg.Embedding.BaseURL, cfg.Embedding.APIKey, cfg.Embedding.Model, cfg.Embedding.Dimensions, !cfg.Embedding.OmitDimensions)
 	searcher := search.NewSearcher(db, client, cfg)
 
 	ctx := context.Background()
