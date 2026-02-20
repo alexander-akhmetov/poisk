@@ -152,8 +152,13 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 		var entries []store.Entry
 		batchSize := ix.cfg.Embedding.BatchSize
 		embedFailed := false
+		totalBatches := (len(texts) + batchSize - 1) / batchSize
 		for i := 0; i < len(texts); i += batchSize {
 			end := min(i+batchSize, len(texts))
+			batchNum := i/batchSize + 1
+			if totalBatches > 1 {
+				slog.Info("embedding batch", "file", filePath, "batch", fmt.Sprintf("%d/%d", batchNum, totalBatches))
+			}
 
 			embeddings, err := ix.client.EmbedBatch(ctx, texts[i:end])
 			if err != nil {
