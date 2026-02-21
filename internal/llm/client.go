@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 type Message struct {
@@ -28,7 +29,11 @@ func NewClient(baseURL, apiKey, model string) *Client {
 		baseURL: baseURL,
 		apiKey:  apiKey,
 		model:   model,
-		http:    &http.Client{},
+		http: &http.Client{
+			Transport: &http.Transport{
+				ResponseHeaderTimeout: 120 * time.Second,
+			},
+		},
 	}
 }
 
@@ -141,11 +146,15 @@ func (c *Client) Stream(ctx context.Context, messages []Message, cb func(string)
 			continue
 		}
 
-		if !strings.HasPrefix(line, "data: ") {
+		var data string
+		switch {
+		case strings.HasPrefix(line, "data: "):
+			data = line[6:]
+		case strings.HasPrefix(line, "data:"):
+			data = line[5:]
+		default:
 			continue
 		}
-
-		data := strings.TrimPrefix(line, "data: ")
 
 		if data == "[DONE]" {
 			return nil

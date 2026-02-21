@@ -185,6 +185,29 @@ func TestStreamCallbackError(t *testing.T) {
 	}
 }
 
+func TestStreamDataNoSpace(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		// SSE spec allows "data:" without trailing space
+		fmt.Fprint(w, "data:{\"choices\":[{\"delta\":{\"content\":\"no-space\"}}]}\n\n")
+		fmt.Fprint(w, "data:[DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "", "m")
+	var got string
+	err := c.Stream(context.Background(), []Message{{Role: "user", Content: "hi"}}, func(s string) error {
+		got += s
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "no-space" {
+		t.Errorf("got %q, want %q", got, "no-space")
+	}
+}
+
 func TestStreamNoChoices(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
