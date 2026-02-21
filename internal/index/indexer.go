@@ -67,6 +67,10 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 		if err := ix.store.ClearSource(folder); err != nil {
 			return stats, fmt.Errorf("clear source %s: %w", folder, err)
 		}
+		// Write meta early so interrupted re-indexing resumes incrementally
+		if err := ix.store.UpdateMeta(folder, ix.cfg.Embedding.Model, ix.cfg.Embedding.Dimensions); err != nil {
+			return stats, fmt.Errorf("update meta for %s: %w", folder, err)
+		}
 	}
 
 	// Scan files
