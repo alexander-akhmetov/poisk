@@ -73,6 +73,24 @@ func (s *Store) TrackedFiles(source string) (map[string]int64, error) {
 	return m, rows.Err()
 }
 
+func (s *Store) TrackedFilePaths(source string) ([]string, error) {
+	rows, err := s.db.Query("SELECT DISTINCT file_path FROM embedding_files WHERE source = ? ORDER BY file_path", source)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var paths []string
+	for rows.Next() {
+		var fp string
+		if err := rows.Scan(&fp); err != nil {
+			return nil, err
+		}
+		paths = append(paths, fp)
+	}
+	return paths, rows.Err()
+}
+
 func (s *Store) TrackedFileCount(source string) (int, error) {
 	var count int
 	err := s.db.QueryRow("SELECT COUNT(*) FROM embedding_files WHERE source = ?", source).Scan(&count)

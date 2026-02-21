@@ -89,6 +89,29 @@ func (s *Store) Count(source string) (int, error) {
 	return count, err
 }
 
+func (s *Store) GetEntriesByPath(source, filePath string) ([]Entry, error) {
+	rows, err := s.db.Query(
+		`SELECT file_path, line_num, end_line, chunk_text, folder, language, chunk_kind, symbol
+		FROM embeddings WHERE source = ? AND file_path = ? ORDER BY line_num`,
+		source, filePath,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get entries by path: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []Entry
+	for rows.Next() {
+		var e Entry
+		e.Source = source
+		if err := rows.Scan(&e.FilePath, &e.LineNum, &e.EndLine, &e.Text, &e.Folder, &e.Language, &e.Kind, &e.Symbol); err != nil {
+			return nil, fmt.Errorf("scan entry: %w", err)
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
 func (s *Store) ClearSource(source string) error {
 	if s.vecAvailable {
 		if _, err := s.db.Exec(

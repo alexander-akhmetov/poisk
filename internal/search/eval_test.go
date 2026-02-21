@@ -226,7 +226,7 @@ func TestEvalRecallAndMRR(t *testing.T) {
 		cfg.Embedding.SendDimensions,
 	)
 	indexer := index.NewIndexer(db, client, &cfg)
-	searcher := NewSearcher(db, client, &cfg)
+	searcher := NewSearcher(db, client, &cfg, nil)
 
 	stats, err := indexer.IndexAll(context.Background())
 	if err != nil {

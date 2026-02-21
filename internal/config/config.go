@@ -21,9 +21,16 @@ func expandHome(path, home string) string {
 
 type Config struct {
 	Embedding EmbeddingConfig `toml:"embedding"`
+	LLM       LLMConfig       `toml:"llm"`
 	Search    SearchConfig    `toml:"search"`
 	Index     IndexConfig     `toml:"index"`
 	Folders   []FolderConfig  `toml:"folders"`
+}
+
+type LLMConfig struct {
+	BaseURL string `toml:"base_url"`
+	APIKey  string `toml:"api_key"`
+	Model   string `toml:"model"`
 }
 
 type EmbeddingConfig struct {
@@ -39,6 +46,9 @@ type SearchConfig struct {
 	RRFk                int     `toml:"rrf_k"` // RRF constant, default 60
 	SimilarityThreshold float64 `toml:"similarity_threshold"`
 	DefaultTopK         int     `toml:"default_top_k"`
+	QueryExpansion      bool    `toml:"query_expansion"`
+	Rerank              bool    `toml:"rerank"`
+	RerankTopN          int     `toml:"rerank_top_n"`
 }
 
 type IndexConfig struct {
@@ -49,8 +59,9 @@ type IndexConfig struct {
 }
 
 type FolderConfig struct {
-	Path        string `toml:"path"`
-	Description string `toml:"description"`
+	Path        string            `toml:"path"`
+	Description string            `toml:"description"`
+	Context     map[string]string `toml:"context"`
 }
 
 func DefaultConfig() Config {
@@ -65,6 +76,7 @@ func DefaultConfig() Config {
 			RRFk:                60,
 			SimilarityThreshold: 0.3,
 			DefaultTopK:         20,
+			RerankTopN:          20,
 		},
 		Index: IndexConfig{
 			ExcludePatterns: []string{".git", "node_modules", "vendor", "__pycache__", ".venv"},

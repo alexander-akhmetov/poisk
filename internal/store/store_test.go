@@ -171,6 +171,76 @@ func TestClearSource(t *testing.T) {
 	}
 }
 
+func TestGetEntriesByPath(t *testing.T) {
+	s := openTestStore(t)
+
+	entries := []Entry{
+		{LineNum: 10, EndLine: 15, Text: "func foo()", Embedding: []float32{1, 0, 0}, Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "foo"},
+		{LineNum: 1, EndLine: 5, Text: "package main", Embedding: []float32{0, 1, 0}, Folder: "src", Language: "go", Kind: "package_clause", Symbol: "main"},
+		{LineNum: 20, EndLine: 25, Text: "func bar()", Embedding: []float32{0, 0, 1}, Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "bar"},
+	}
+	if err := s.InsertEntries("src", "main.go", entries); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.GetEntriesByPath("src", "main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d entries, want 3", len(got))
+	}
+	// Should be ordered by line_num
+	if got[0].LineNum != 1 || got[1].LineNum != 10 || got[2].LineNum != 20 {
+		t.Fatalf("unexpected order: %d, %d, %d", got[0].LineNum, got[1].LineNum, got[2].LineNum)
+	}
+	// Embedding should be nil (not hydrated)
+	for i, e := range got {
+		if e.Embedding != nil {
+			t.Fatalf("entry %d: expected nil embedding", i)
+		}
+	}
+	// Metadata should be preserved
+	if got[0].Symbol != "main" || got[1].Symbol != "foo" || got[2].Symbol != "bar" {
+		t.Fatalf("symbols: %q, %q, %q", got[0].Symbol, got[1].Symbol, got[2].Symbol)
+	}
+
+	// Different source returns empty
+	got, err = s.GetEntriesByPath("other", "main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected 0 entries for other source, got %d", len(got))
+	}
+}
+
+func TestTrackedFilePaths(t *testing.T) {
+	s := openTestStore(t)
+
+	if err := s.SetFileMtime("src", "a.go", 100); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetFileMtime("src", "b.go", 200); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetFileMtime("other", "c.go", 300); err != nil {
+		t.Fatal(err)
+	}
+
+	paths, err := s.TrackedFilePaths("src")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 2 {
+		t.Fatalf("got %d paths, want 2", len(paths))
+	}
+	// Should be sorted
+	if paths[0] != "a.go" || paths[1] != "b.go" {
+		t.Fatalf("unexpected paths: %v", paths)
+	}
+}
+
 func TestDBPathCreation(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "sub", "nested", "test.db")

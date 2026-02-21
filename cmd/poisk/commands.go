@@ -14,6 +14,7 @@ import (
 	"github.com/akhmetov/poisk/internal/config"
 	"github.com/akhmetov/poisk/internal/embed"
 	"github.com/akhmetov/poisk/internal/index"
+	"github.com/akhmetov/poisk/internal/llm"
 	mcpserver "github.com/akhmetov/poisk/internal/mcp"
 	"github.com/akhmetov/poisk/internal/search"
 	"github.com/akhmetov/poisk/internal/store"
@@ -33,7 +34,12 @@ func cmdServe() error {
 
 	client := embed.NewClient(cfg.Embedding.BaseURL, cfg.Embedding.APIKey, cfg.Embedding.Model, cfg.Embedding.Dimensions, cfg.Embedding.SendDimensions)
 	indexer := index.NewIndexer(db, client, cfg)
-	searcher := search.NewSearcher(db, client, cfg)
+
+	var llmClient *llm.Client
+	if cfg.LLM.BaseURL != "" {
+		llmClient = llm.NewClient(cfg.LLM.BaseURL, cfg.LLM.APIKey, cfg.LLM.Model)
+	}
+	searcher := search.NewSearcher(db, client, cfg, llmClient)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -136,7 +142,12 @@ func cmdSearch() error {
 	defer db.Close()
 
 	client := embed.NewClient(cfg.Embedding.BaseURL, cfg.Embedding.APIKey, cfg.Embedding.Model, cfg.Embedding.Dimensions, cfg.Embedding.SendDimensions)
-	searcher := search.NewSearcher(db, client, cfg)
+
+	var llmCli *llm.Client
+	if cfg.LLM.BaseURL != "" {
+		llmCli = llm.NewClient(cfg.LLM.BaseURL, cfg.LLM.APIKey, cfg.LLM.Model)
+	}
+	searcher := search.NewSearcher(db, client, cfg, llmCli)
 
 	ctx := context.Background()
 	results, err := searcher.Search(ctx, query, cfg.Search.DefaultTopK, nil)
