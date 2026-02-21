@@ -1,6 +1,6 @@
 # poisk
 
-Hybrid RAG+FTS search with MCP interface. Go binary that indexes source code and markdown files with embeddings into SQLite and exposes hybrid semantic+keyword search via MCP.
+Hybrid search with MCP interface. Go binary that indexes source code and markdown files with embeddings into SQLite and exposes hybrid semantic+keyword search via MCP.
 
 ## Build & Test
 
