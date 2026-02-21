@@ -109,10 +109,9 @@ func (s *Store) dropAllTables() {
 }
 
 func (s *Store) initVec0() {
+	needsDrop := false
 	rows, err := s.db.Query("SELECT DISTINCT dimensions FROM embedding_meta")
 	if err == nil {
-		defer rows.Close()
-		needsDrop := false
 		for rows.Next() {
 			var storedDims int
 			if rows.Scan(&storedDims) == nil && storedDims != s.dimensions {
@@ -120,11 +119,16 @@ func (s *Store) initVec0() {
 				break
 			}
 		}
-		if needsDrop {
-			slog.Info("vec0 dimensions mismatch, recreating", "new", s.dimensions)
-			if _, err := s.db.Exec("DROP TABLE IF EXISTS vec_embeddings"); err != nil {
-				slog.Warn("failed to drop vec_embeddings", "error", err)
-			}
+		rows.Close()
+	}
+	if needsDrop {
+		slog.Info("vec0 dimensions mismatch, recreating", "new", s.dimensions)
+		if _, err := s.db.Exec("DROP TABLE IF EXISTS vec_embeddings"); err != nil {
+			slog.Warn("failed to drop vec_embeddings", "error", err)
+		}
+		// Clear stale meta so mismatch isn't re-detected on next startup
+		if _, err := s.db.Exec("DELETE FROM embedding_meta WHERE dimensions != ?", s.dimensions); err != nil {
+			slog.Warn("failed to clean stale embedding_meta", "error", err)
 		}
 	}
 
