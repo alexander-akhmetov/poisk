@@ -11,9 +11,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/akhmetov/poisk/internal/ask"
 	"github.com/akhmetov/poisk/internal/config"
 	"github.com/akhmetov/poisk/internal/embed"
 	"github.com/akhmetov/poisk/internal/index"
+	"github.com/akhmetov/poisk/internal/llm"
 	mcpserver "github.com/akhmetov/poisk/internal/mcp"
 	"github.com/akhmetov/poisk/internal/search"
 	"github.com/akhmetov/poisk/internal/store"
@@ -35,10 +37,16 @@ func cmdServe() error {
 	indexer := index.NewIndexer(db, client, cfg)
 	searcher := search.NewSearcher(db, client, cfg)
 
+	var asker *ask.Asker
+	if cfg.LLM.BaseURL != "" && cfg.LLM.Model != "" {
+		llmClient := llm.NewClient(cfg.LLM.BaseURL, cfg.LLM.APIKey, cfg.LLM.Model)
+		asker = ask.NewAsker(searcher, llmClient, cfg.LLM.MaxContextChunks, cfg.LLM.SystemPrompt)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if err := mcpserver.Run(ctx, indexer, searcher, db, cfg); err != nil {
+	if err := mcpserver.Run(ctx, indexer, searcher, db, cfg, asker); err != nil {
 		return fmt.Errorf("mcp server: %w", err)
 	}
 	return nil
@@ -147,6 +155,51 @@ func cmdSearch() error {
 	for _, r := range results {
 		fmt.Printf("[%.2f] %s:%d  %s\n", r.Score, r.FilePath, r.LineNum, truncate(r.Text, 100))
 	}
+	return nil
+}
+
+func cmdAsk() error {
+	if len(os.Args) < 3 {
+		return fmt.Errorf("usage: poisk ask <question>")
+	}
+	question := strings.Join(os.Args[2:], " ")
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	if cfg.LLM.BaseURL == "" || cfg.LLM.Model == "" {
+		var missing []string
+		if cfg.LLM.BaseURL == "" {
+			missing = append(missing, "llm.base_url")
+		}
+		if cfg.LLM.Model == "" {
+			missing = append(missing, "llm.model")
+		}
+		return fmt.Errorf("missing required LLM config: %s", strings.Join(missing, ", "))
+	}
+
+	db, err := store.Open(config.DBPath(), cfg.Embedding.Dimensions)
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer db.Close()
+
+	embedClient := embed.NewClient(cfg.Embedding.BaseURL, cfg.Embedding.APIKey, cfg.Embedding.Model, cfg.Embedding.Dimensions, cfg.Embedding.SendDimensions)
+	searcher := search.NewSearcher(db, embedClient, cfg)
+	llmClient := llm.NewClient(cfg.LLM.BaseURL, cfg.LLM.APIKey, cfg.LLM.Model)
+	asker := ask.NewAsker(searcher, llmClient, cfg.LLM.MaxContextChunks, cfg.LLM.SystemPrompt)
+
+	ctx := context.Background()
+	err = asker.AskStream(ctx, question, nil, func(token string) error {
+		fmt.Print(token)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("ask: %w", err)
+	}
+	fmt.Println()
 	return nil
 }
 

@@ -27,6 +27,15 @@ exclude_patterns = [".git", "node_modules", "vendor", "__pycache__", ".venv", "d
 # Skip files larger than this (in KB)
 max_file_size_kb = 512
 
+# Optional: LLM configuration for "poisk ask" and MCP ask tool.
+# Requires any OpenAI-compatible chat completions API.
+# [llm]
+# base_url = "http://localhost:11434/v1"
+# api_key = ""
+# model = "llama3"
+# max_context_chunks = 10
+# system_prompt = "You are a helpful assistant. Answer based on the provided context."
+
 # Add one or more [[folders]] sections to index.
 # Each folder is indexed independently and can be filtered in search queries.
 

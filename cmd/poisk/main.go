@@ -20,6 +20,8 @@ func main() {
 		err = cmdIndex()
 	case "search":
 		err = cmdSearch()
+	case "ask":
+		err = cmdAsk()
 	case "status":
 		err = cmdStatus()
 	default:
@@ -43,6 +45,7 @@ Commands:
             --watch       Re-index periodically instead of once
             --interval D  Interval between cycles (default 5m)
   search  Search indexed content
+  ask     Ask a question using RAG (requires [llm] config)
   status  Show index status
 `)
 }

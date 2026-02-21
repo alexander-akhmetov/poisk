@@ -23,7 +23,16 @@ type Config struct {
 	Embedding EmbeddingConfig `toml:"embedding"`
 	Search    SearchConfig    `toml:"search"`
 	Index     IndexConfig     `toml:"index"`
+	LLM       LLMConfig       `toml:"llm"`
 	Folders   []FolderConfig  `toml:"folders"`
+}
+
+type LLMConfig struct {
+	BaseURL         string `toml:"base_url"`
+	APIKey          string `toml:"api_key"`
+	Model           string `toml:"model"`
+	MaxContextChunks int   `toml:"max_context_chunks"`
+	SystemPrompt    string `toml:"system_prompt"`
 }
 
 type EmbeddingConfig struct {
@@ -69,6 +78,9 @@ func DefaultConfig() Config {
 		Index: IndexConfig{
 			ExcludePatterns: []string{".git", "node_modules", "vendor", "__pycache__", ".venv"},
 			MaxFileSizeKB:   512,
+		},
+		LLM: LLMConfig{
+			MaxContextChunks: 10,
 		},
 	}
 }

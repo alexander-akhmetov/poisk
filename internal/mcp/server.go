@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/akhmetov/poisk/internal/ask"
 	"github.com/akhmetov/poisk/internal/config"
 	"github.com/akhmetov/poisk/internal/index"
 	"github.com/akhmetov/poisk/internal/search"
@@ -13,13 +14,13 @@ import (
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func Run(ctx context.Context, indexer *index.Indexer, searcher *search.Searcher, db *store.Store, cfg *config.Config) error {
+func Run(ctx context.Context, indexer *index.Indexer, searcher *search.Searcher, db *store.Store, cfg *config.Config, asker *ask.Asker) error {
 	server := gomcp.NewServer(
 		&gomcp.Implementation{Name: "poisk", Version: "0.1.0"},
 		nil,
 	)
 
-	registerTools(server, indexer, searcher, db, cfg)
+	registerTools(server, indexer, searcher, db, cfg, asker)
 
 	return server.Run(ctx, &gomcp.StdioTransport{})
 }
@@ -35,7 +36,12 @@ type ReindexInput struct {
 	Force  bool   `json:"force,omitempty" jsonschema:"description=Ignore mtimes and full rebuild"`
 }
 
-func registerTools(server *gomcp.Server, indexer *index.Indexer, searcher *search.Searcher, db *store.Store, cfg *config.Config) {
+type AskInput struct {
+	Question string   `json:"question" jsonschema:"required,description=Question to answer using indexed content"`
+	Folders  []string `json:"folders,omitempty" jsonschema:"description=Filter context to folder paths"`
+}
+
+func registerTools(server *gomcp.Server, indexer *index.Indexer, searcher *search.Searcher, db *store.Store, cfg *config.Config, asker *ask.Asker) {
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "search",
 		Description: "Search indexed source code and documents using hybrid semantic + keyword search",
@@ -122,6 +128,21 @@ func registerTools(server *gomcp.Server, indexer *index.Indexer, searcher *searc
 			Content: []gomcp.Content{&gomcp.TextContent{Text: sb.String()}},
 		}, nil, nil
 	})
+
+	if asker != nil {
+		gomcp.AddTool(server, &gomcp.Tool{
+			Name:        "ask",
+			Description: "Ask a question and get an LLM-generated answer using indexed content as context",
+		}, func(ctx context.Context, _ *gomcp.CallToolRequest, args AskInput) (*gomcp.CallToolResult, any, error) {
+			answer, err := asker.Ask(ctx, args.Question, args.Folders)
+			if err != nil {
+				return nil, nil, fmt.Errorf("ask: %w", err)
+			}
+			return &gomcp.CallToolResult{
+				Content: []gomcp.Content{&gomcp.TextContent{Text: answer}},
+			}, nil, nil
+		})
+	}
 
 	// Resource: index status
 	server.AddResource(&gomcp.Resource{
