@@ -36,15 +36,13 @@ type EmbeddingConfig struct {
 }
 
 type SearchConfig struct {
-	VectorWeight        float64 `toml:"vector_weight"`  // deprecated: kept for config compat
-	TextWeight          float64 `toml:"text_weight"`    // deprecated: kept for config compat
-	RRFk                int     `toml:"rrf_k"`          // RRF constant, default 60
+	RRFk                int     `toml:"rrf_k"` // RRF constant, default 60
 	SimilarityThreshold float64 `toml:"similarity_threshold"`
 	DefaultTopK         int     `toml:"default_top_k"`
 }
 
 type IndexConfig struct {
-	Extensions      []string `toml:"extensions"`       // deprecated: use Languages
+	Extensions      []string `toml:"extensions"` // deprecated: use Languages
 	Languages       []string `toml:"languages"`
 	ExcludePatterns []string `toml:"exclude_patterns"`
 	MaxFileSizeKB   int      `toml:"max_file_size_kb"`
@@ -64,8 +62,6 @@ func DefaultConfig() Config {
 			BatchSize:  50,
 		},
 		Search: SearchConfig{
-			VectorWeight:        0.7,
-			TextWeight:          0.3,
 			RRFk:                60,
 			SimilarityThreshold: 0.3,
 			DefaultTopK:         20,
