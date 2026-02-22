@@ -27,25 +27,25 @@ func Run(ctx context.Context, indexer *index.Indexer, searcher *search.Searcher,
 }
 
 type SearchInput struct {
-	Query   string   `json:"query" jsonschema:"required,description=Search query text"`
-	TopK    int      `json:"top_k,omitempty" jsonschema:"description=Max results (default 20)"`
-	Folders []string `json:"folders,omitempty" jsonschema:"description=Filter to folder paths"`
+	Query   string   `json:"query" jsonschema:"Search query text"`
+	TopK    int      `json:"top_k,omitempty" jsonschema:"Max results (default 20)"`
+	Folders []string `json:"folders,omitempty" jsonschema:"Filter to folder paths"`
 }
 
 type ReindexInput struct {
-	Folder string `json:"folder,omitempty" jsonschema:"description=Specific folder or all if empty"`
-	Force  bool   `json:"force,omitempty" jsonschema:"description=Ignore mtimes and full rebuild"`
+	Folder string `json:"folder,omitempty" jsonschema:"Specific folder or all if empty"`
+	Force  bool   `json:"force,omitempty" jsonschema:"Ignore mtimes and full rebuild"`
 }
 
 type GetInput struct {
-	FilePath  string `json:"file_path" jsonschema:"required,description=Path of the indexed file to retrieve"`
-	StartLine int    `json:"start_line,omitempty" jsonschema:"description=First line to include (1-based inclusive)"`
-	EndLine   int    `json:"end_line,omitempty" jsonschema:"description=Last line to include (1-based inclusive)"`
+	FilePath  string `json:"file_path" jsonschema:"Path of the indexed file to retrieve"`
+	StartLine int    `json:"start_line,omitempty" jsonschema:"First line to include (1-based inclusive)"`
+	EndLine   int    `json:"end_line,omitempty" jsonschema:"Last line to include (1-based inclusive)"`
 }
 
 type MultiGetInput struct {
-	Paths    string `json:"paths" jsonschema:"required,description=Comma-separated file paths or glob patterns"`
-	MaxBytes int    `json:"max_bytes,omitempty" jsonschema:"description=Max total bytes to return (default 100000)"`
+	Paths    string `json:"paths" jsonschema:"Comma-separated file paths or glob patterns"`
+	MaxBytes int    `json:"max_bytes,omitempty" jsonschema:"Max total bytes to return (default 100000)"`
 }
 
 func registerTools(server *gomcp.Server, indexer *index.Indexer, searcher *search.Searcher, db *store.Store, cfg *config.Config) {

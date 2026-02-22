@@ -44,6 +44,8 @@ func cmdServe() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	slog.Info("starting MCP server", "transport", "stdio", "folders", len(cfg.Folders))
+
 	if err := mcpserver.Run(ctx, indexer, searcher, db, cfg); err != nil {
 		return fmt.Errorf("mcp server: %w", err)
 	}
