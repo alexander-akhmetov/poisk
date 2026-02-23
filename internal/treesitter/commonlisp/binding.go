@@ -1,7 +1,7 @@
 package commonlisp
 
 //#include "tree_sitter/parser.h"
-//TSLanguage *tree_sitter_commonlisp(void); //nolint:gocritic
+//TSLanguage *tree_sitter_commonlisp(void);
 import "C"
 import (
 	"unsafe"

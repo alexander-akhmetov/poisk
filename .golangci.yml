@@ -63,6 +63,9 @@ linters:
       - linters:
           - revive
         text: if-return
+      - linters:
+          - gocritic
+        path: internal/treesitter/commonlisp/binding\.go
 
 formatters:
   enable:
