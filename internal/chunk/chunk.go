@@ -24,7 +24,7 @@ func File(path, content string) ([]Chunk, error) {
 		if _, ok := extToLang[ext]; ok {
 			return chunkTreeSitter(ext, content)
 		}
-		// Fall back to fixed-window for unknown extensions
+		// Fall back to heuristic source chunking for unknown extensions.
 		return chunkSource(content), nil
 	}
 }

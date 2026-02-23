@@ -74,11 +74,10 @@ This paragraph has enough text to be included as a chunk in the output.
 	}
 }
 
-func TestChunkSourceWindow(t *testing.T) {
-	// Use .txt to test the fixed-window source chunker
-	lines := make([]string, 60)
+func TestChunkSourceStructuredFallback(t *testing.T) {
+	lines := make([]string, 120)
 	for i := range lines {
-		lines[i] = "// line " + string(rune('A'+i%26))
+		lines[i] = "line with enough body text for semantic chunking " + strings.Repeat("x", 30)
 	}
 	content := strings.Join(lines, "\n")
 
@@ -93,8 +92,32 @@ func TestChunkSourceWindow(t *testing.T) {
 	if chunks[0].StartLine != 1 {
 		t.Errorf("first chunk StartLine = %d, want 1", chunks[0].StartLine)
 	}
-	if chunks[0].Kind != "window" {
-		t.Errorf("chunk kind = %q, want window", chunks[0].Kind)
+	if chunks[0].Kind == "" {
+		t.Fatal("chunk kind should be set")
+	}
+}
+
+func TestChunkSourceCommentBoundaryHeuristic(t *testing.T) {
+	content := strings.Join([]string{
+		"// This comment block explains fallback chunking behavior in enough detail to avoid tiny-block merging.",
+		"// It should remain a coherent comment chunk and not be merged into the following function signature.",
+		"func runTask(input string) string {",
+		"\treturn input + \"-ok\"",
+		"}",
+	}, "\n")
+
+	lines := strings.Split(content, "\n")
+	blocks := detectSourceBlocks(lines, buildLinePrefix(lines))
+	if len(blocks) < 2 {
+		t.Fatalf("got %d blocks, want >= 2", len(blocks))
+	}
+
+	firstBlockText := strings.TrimSpace(strings.Join(lines[blocks[0].start:blocks[0].end+1], "\n"))
+	if !strings.HasPrefix(firstBlockText, "// This comment block") {
+		t.Fatalf("unexpected first block text: %q", firstBlockText)
+	}
+	if strings.Contains(firstBlockText, "func runTask") {
+		t.Fatalf("comment block should be split from function signature, got %q", firstBlockText)
 	}
 }
 
@@ -131,6 +154,91 @@ func TestChunkSourceTooShort(t *testing.T) {
 	}
 	if len(chunks) != 0 {
 		t.Fatalf("got %d chunks, want 0 for tiny file", len(chunks))
+	}
+}
+
+func TestChunkSourceLongSpanSplit(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString("function processData(input) {\n")
+	for i := 0; i < 500; i++ {
+		sb.WriteString("  const line = input + \"-")
+		sb.WriteString(strings.Repeat("x", 25))
+		sb.WriteString("\";\n")
+	}
+	sb.WriteString("}\n")
+
+	chunks, err := File("big.txt", sb.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) < 2 {
+		t.Fatalf("got %d chunks, want >= 2 for long source span", len(chunks))
+	}
+	for _, c := range chunks {
+		if len(c.Text) > fallbackMaxChars*2 {
+			t.Errorf("chunk too large: %d chars", len(c.Text))
+		}
+	}
+}
+
+func TestChunkSourceTinyNoisyFile(t *testing.T) {
+	content := ";\n#\n//\n{}\n"
+	chunks, err := File("noise.txt", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) != 0 {
+		t.Fatalf("got %d chunks, want 0 for tiny noisy file", len(chunks))
+	}
+}
+
+func TestChunkSourceOverlapMetadata(t *testing.T) {
+	var lines []string
+	for i := 0; i < 140; i++ {
+		if i%8 == 0 {
+			lines = append(lines, "Section: "+strings.Repeat("S", 40))
+			continue
+		}
+		lines = append(lines, "body line "+strings.Repeat("x", 50))
+	}
+	content := strings.Join(lines, "\n")
+
+	chunks, err := File("meta.txt", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) < 2 {
+		t.Fatalf("got %d chunks, want >= 2", len(chunks))
+	}
+
+	totalLines := len(strings.Split(content, "\n"))
+	hasOverlap := false
+	for i, c := range chunks {
+		if c.StartLine < 1 || c.EndLine > totalLines || c.EndLine < c.StartLine {
+			t.Fatalf("invalid metadata for chunk %d: start=%d end=%d total=%d", i, c.StartLine, c.EndLine, totalLines)
+		}
+		gotTextLines := strings.Count(c.Text, "\n") + 1
+		wantTextLines := c.EndLine - c.StartLine + 1
+		if gotTextLines != wantTextLines {
+			t.Fatalf("chunk %d line mismatch: text has %d lines, metadata says %d", i, gotTextLines, wantTextLines)
+		}
+		if i == 0 {
+			continue
+		}
+
+		prev := chunks[i-1]
+		if c.StartLine <= prev.EndLine {
+			hasOverlap = true
+		}
+		if c.StartLine <= prev.StartLine {
+			t.Fatalf("chunk %d start line %d should be > previous start line %d", i, c.StartLine, prev.StartLine)
+		}
+		if c.StartLine > prev.EndLine+1 {
+			t.Fatalf("chunk %d has gap: start=%d previous end=%d", i, c.StartLine, prev.EndLine)
+		}
+	}
+	if !hasOverlap {
+		t.Fatal("expected at least one overlapping chunk boundary")
 	}
 }
 
