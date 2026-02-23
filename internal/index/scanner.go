@@ -13,22 +13,13 @@ import (
 // docExtensions are always included for markdown/text content.
 var docExtensions = []string{".md", ".markdown", ".txt", ".org"}
 
-func buildExtensionSet(languages, legacyExtensions []string) map[string]bool {
+func buildExtensionSet() map[string]bool {
 	extSet := make(map[string]bool)
 
-	// Language-based extensions from tree-sitter
-	if len(languages) > 0 {
-		for _, ext := range chunk.SupportedExtensions(languages) {
-			extSet["."+ext] = true
-		}
+	for _, ext := range chunk.SupportedExtensions(chunk.SupportedLanguages()) {
+		extSet["."+ext] = true
 	}
 
-	// Legacy extensions (backward compat)
-	for _, e := range legacyExtensions {
-		extSet["."+e] = true
-	}
-
-	// Always include doc extensions
 	for _, ext := range docExtensions {
 		extSet[ext] = true
 	}
@@ -46,7 +37,7 @@ func loadGitignore(root string) *ignore.GitIgnore {
 	return gi
 }
 
-func scanFolder(root string, languages, extensions []string, excludePatterns []string, maxSizeKB int) ([]string, error) {
+func scanFolder(root string, excludePatterns []string, maxSizeKB int) ([]string, error) {
 	// Resolve symlinks so WalkDir can traverse the real directory.
 	resolved, err := filepath.EvalSymlinks(root)
 	if err != nil {
@@ -54,7 +45,7 @@ func scanFolder(root string, languages, extensions []string, excludePatterns []s
 	}
 	root = resolved
 
-	extSet := buildExtensionSet(languages, extensions)
+	extSet := buildExtensionSet()
 	gi := loadGitignore(root)
 
 	maxBytes := int64(maxSizeKB) * 1024

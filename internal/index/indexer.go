@@ -74,7 +74,7 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 	}
 
 	// Scan files
-	files, err := scanFolder(folder, ix.cfg.Index.Languages, ix.cfg.Index.Extensions, ix.cfg.Index.ExcludePatterns, ix.cfg.Index.MaxFileSizeKB)
+	files, err := scanFolder(folder, ix.cfg.Index.ExcludePatterns, ix.cfg.Index.MaxFileSizeKB)
 	if err != nil {
 		return stats, err
 	}

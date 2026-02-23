@@ -52,8 +52,6 @@ type SearchConfig struct {
 }
 
 type IndexConfig struct {
-	Extensions      []string `toml:"extensions"` // deprecated: use Languages
-	Languages       []string `toml:"languages"`
 	ExcludePatterns []string `toml:"exclude_patterns"`
 	MaxFileSizeKB   int      `toml:"max_file_size_kb"`
 }
@@ -112,7 +110,6 @@ func Load() (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			cfg.Index.Languages = []string{"go", "python", "rust", "javascript", "typescript"}
 			return &cfg, nil
 		}
 		return nil, fmt.Errorf("read config: %w", err)
@@ -126,11 +123,6 @@ func Load() (*Config, error) {
 	home, _ := os.UserHomeDir()
 	for i := range cfg.Folders {
 		cfg.Folders[i].Path = expandHome(cfg.Folders[i].Path, home)
-	}
-
-	// Default languages only when neither languages nor legacy extensions were set
-	if len(cfg.Index.Languages) == 0 && len(cfg.Index.Extensions) == 0 {
-		cfg.Index.Languages = []string{"go", "python", "rust", "javascript", "typescript"}
 	}
 
 	if err := cfg.validate(); err != nil {

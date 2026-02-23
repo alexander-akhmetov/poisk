@@ -196,7 +196,6 @@ func TestEvalRecallAndMRR(t *testing.T) {
 	cfg.Embedding.Model = "eval-test-embedding"
 	cfg.Embedding.Dimensions = 64
 	cfg.Embedding.BatchSize = 128
-	cfg.Index.Languages = []string{"go", "python", "rust", "javascript", "typescript"}
 	cfg.Index.MaxFileSizeKB = 1024
 	cfg.Search.DefaultTopK = k
 	cfg.Search.SimilarityThreshold = 0.0

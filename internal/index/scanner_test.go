@@ -22,7 +22,7 @@ func TestScanFolderRespectsGitignore(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "debug.log"), []byte("log"), 0644)
 	os.WriteFile(filepath.Join(dir, "README.md"), []byte("# readme"), 0644)
 
-	files, err := scanFolder(dir, []string{"go"}, nil, []string{".git"}, 512)
+	files, err := scanFolder(dir, []string{".git"}, 512)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestScanFolderNoGitignore(t *testing.T) {
 
 	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0644)
 
-	files, err := scanFolder(dir, []string{"go"}, nil, []string{".git"}, 512)
+	files, err := scanFolder(dir, []string{".git"}, 512)
 	if err != nil {
 		t.Fatal(err)
 	}

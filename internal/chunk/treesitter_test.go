@@ -292,6 +292,72 @@ func TestSupportedExtensions(t *testing.T) {
 	}
 }
 
+func TestTreeSitterCommonLisp(t *testing.T) {
+	content := `(defun greet (name)
+  "Greet someone."
+  (format t "Hello, ~a!" name))
+
+(defclass person ()
+  ((name :initarg :name :accessor person-name)
+   (age  :initarg :age  :accessor person-age)))
+
+(defvar *greeting* "Hello")
+
+(in-package :my-app)
+`
+	chunks, err := File("example.lisp", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) < 3 {
+		t.Fatalf("got %d chunks, want >= 3", len(chunks))
+	}
+
+	type want struct {
+		symbol string
+		lang   string
+	}
+	wants := []want{
+		{"greet", "commonlisp"},
+		{"person", "commonlisp"},
+		{"*greeting*", "commonlisp"},
+	}
+
+	for _, w := range wants {
+		found := false
+		for _, c := range chunks {
+			if c.Symbol == w.symbol {
+				found = true
+				if c.Language != w.lang {
+					t.Errorf("symbol %q: language = %q, want %q", w.symbol, c.Language, w.lang)
+				}
+				if c.Kind != "list_lit" {
+					t.Errorf("symbol %q: kind = %q, want list_lit", w.symbol, c.Kind)
+				}
+				if c.StartLine == 0 || c.EndLine == 0 {
+					t.Errorf("symbol %q: missing line range", w.symbol)
+				}
+				break
+			}
+		}
+		if !found {
+			t.Errorf("did not find chunk with symbol %q", w.symbol)
+		}
+	}
+
+	// Verify in-package is also captured (symbol = ":my-app")
+	found := false
+	for _, c := range chunks {
+		if strings.Contains(c.Text, "in-package") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("did not find in-package form")
+	}
+}
+
 func TestLangForExt(t *testing.T) {
 	if got := LangForExt(".go"); got != "go" {
 		t.Errorf("LangForExt(.go) = %q, want go", got)

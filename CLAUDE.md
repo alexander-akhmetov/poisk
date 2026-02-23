@@ -18,6 +18,7 @@ The `-tags fts5` build tag is required to enable FTS5 support in go-sqlite3.
 - `internal/store/` — SQLite with sqlite-vec (vec0) + FTS5
 - `internal/embed/` — OpenAI-compatible embedding client
 - `internal/chunk/` — Markdown paragraph + source code fixed-window chunkers
+- `internal/treesitter/commonlisp/` — CGo binding for tree-sitter-commonlisp grammar
 - `internal/index/` — Incremental file indexer with mtime tracking
 - `internal/search/` — Hybrid vec0 KNN + FTS5 BM25 with weighted merge
 - `internal/mcp/` — MCP server (search/reindex tools + index-status resource)

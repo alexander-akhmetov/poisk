@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/akhmetov/poisk/internal/treesitter/commonlisp"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/golang"
 	"github.com/smacker/go-tree-sitter/javascript"
@@ -91,6 +92,14 @@ var languages = []langSpec{
 			"export_statement":       true,
 			"interface_declaration":  true,
 			"type_alias_declaration": true,
+		},
+	},
+	{
+		language:   commonlisp.GetLanguage(),
+		name:       "commonlisp",
+		extensions: []string{".lisp", ".cl", ".asd", ".lsp"},
+		topTypes: map[string]bool{
+			"list_lit": true,
 		},
 	},
 }
@@ -309,6 +318,39 @@ func extractSymbol(node *sitter.Node, src []byte, lang string) string {
 			}
 			if nameNode := child.ChildByFieldName("name"); nameNode != nil {
 				return nameNode.Content(src)
+			}
+		}
+	}
+
+	// Common Lisp: all top-level forms are list_lit
+	if lang == "commonlisp" && node.Type() == "list_lit" {
+		// defun is a nested child: list_lit → defun → defun_header → sym_lit
+		for i := 0; i < int(node.ChildCount()); i++ {
+			child := node.Child(i)
+			if child == nil {
+				continue
+			}
+			if child.Type() == "defun" {
+				for j := 0; j < int(child.ChildCount()); j++ {
+					hdr := child.Child(j)
+					if hdr != nil && hdr.Type() == "defun_header" {
+						for k := 0; k < int(hdr.ChildCount()); k++ {
+							sym := hdr.Child(k)
+							if sym != nil && sym.Type() == "sym_lit" {
+								return sym.Content(src)
+							}
+						}
+					}
+				}
+				return ""
+			}
+		}
+		// Regular forms: (form-name symbol-name ...)
+		// child 0 = "(", child 1 = form name, child 2 = defined symbol
+		if int(node.ChildCount()) >= 3 {
+			sym := node.Child(2)
+			if sym != nil {
+				return sym.Content(src)
 			}
 		}
 	}
