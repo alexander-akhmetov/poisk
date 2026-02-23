@@ -33,6 +33,8 @@ var languages = []langSpec{
 			"function_declaration": true,
 			"method_declaration":   true,
 			"type_declaration":     true,
+			"const_declaration":    true,
+			"var_declaration":      true,
 		},
 	},
 	{
@@ -43,6 +45,8 @@ var languages = []langSpec{
 			"function_definition":  true,
 			"class_definition":     true,
 			"decorated_definition": true,
+			"assignment":           true,
+			"expression_statement": true,
 		},
 	},
 	{
@@ -55,6 +59,10 @@ var languages = []langSpec{
 			"enum_item":     true,
 			"impl_item":     true,
 			"trait_item":    true,
+			"const_item":    true,
+			"static_item":   true,
+			"type_item":     true,
+			"mod_item":      true,
 		},
 	},
 	{
@@ -62,10 +70,12 @@ var languages = []langSpec{
 		name:       "javascript",
 		extensions: []string{".js", ".jsx", ".mjs", ".cjs"},
 		topTypes: map[string]bool{
-			"function_declaration": true,
-			"class_declaration":    true,
-			"lexical_declaration":  true,
-			"export_statement":     true,
+			"function_declaration":           true,
+			"generator_function_declaration": true,
+			"class_declaration":              true,
+			"lexical_declaration":            true,
+			"variable_declaration":           true,
+			"export_statement":               true,
 		},
 	},
 	{
@@ -73,12 +83,15 @@ var languages = []langSpec{
 		name:       "typescript",
 		extensions: []string{".ts"},
 		topTypes: map[string]bool{
-			"function_declaration":   true,
-			"class_declaration":      true,
-			"lexical_declaration":    true,
-			"export_statement":       true,
-			"interface_declaration":  true,
-			"type_alias_declaration": true,
+			"function_declaration":           true,
+			"generator_function_declaration": true,
+			"class_declaration":              true,
+			"lexical_declaration":            true,
+			"variable_declaration":           true,
+			"export_statement":               true,
+			"interface_declaration":          true,
+			"type_alias_declaration":         true,
+			"enum_declaration":               true,
 		},
 	},
 	{
@@ -86,12 +99,15 @@ var languages = []langSpec{
 		name:       "typescript",
 		extensions: []string{".tsx"},
 		topTypes: map[string]bool{
-			"function_declaration":   true,
-			"class_declaration":      true,
-			"lexical_declaration":    true,
-			"export_statement":       true,
-			"interface_declaration":  true,
-			"type_alias_declaration": true,
+			"function_declaration":           true,
+			"generator_function_declaration": true,
+			"class_declaration":              true,
+			"lexical_declaration":            true,
+			"variable_declaration":           true,
+			"export_statement":               true,
+			"interface_declaration":          true,
+			"type_alias_declaration":         true,
+			"enum_declaration":               true,
 		},
 	},
 	{
@@ -176,6 +192,9 @@ func chunkTreeSitter(ext, content string) ([]Chunk, error) {
 
 		nodeType := child.Type()
 		if !spec.topTypes[nodeType] {
+			continue
+		}
+		if spec.name == "python" && nodeType == "expression_statement" && !hasChildType(child, "assignment") {
 			continue
 		}
 
@@ -283,6 +302,10 @@ func extractSymbol(node *sitter.Node, src []byte, lang string) string {
 		return nameNode.Content(src)
 	}
 
+	if symbol := findNameInDescendants(node, src, 3); symbol != "" {
+		return symbol
+	}
+
 	// For Go type declarations, look for type_spec child
 	if lang == "go" && node.Type() == "type_declaration" {
 		for i := 0; i < int(node.ChildCount()); i++ {
@@ -323,6 +346,23 @@ func extractSymbol(node *sitter.Node, src []byte, lang string) string {
 		}
 	}
 
+	if node.Type() == "var_declaration" || node.Type() == "const_declaration" {
+		if symbol := findFirstDescendantType(node, src, "identifier", 4); symbol != "" {
+			return symbol
+		}
+	}
+
+	if node.Type() == "assignment" && lang == "python" {
+		if symbol := findFirstDescendantType(node, src, "identifier", 3); symbol != "" {
+			return symbol
+		}
+	}
+	if node.Type() == "expression_statement" && lang == "python" && hasChildType(node, "assignment") {
+		if symbol := findFirstDescendantType(node, src, "identifier", 4); symbol != "" {
+			return symbol
+		}
+	}
+
 	// Common Lisp: all top-level forms are list_lit
 	if lang == "commonlisp" && node.Type() == "list_lit" {
 		// defun is a nested child: list_lit → defun → defun_header → sym_lit
@@ -357,4 +397,71 @@ func extractSymbol(node *sitter.Node, src []byte, lang string) string {
 	}
 
 	return ""
+}
+
+func findNameInDescendants(node *sitter.Node, src []byte, maxDepth int) string {
+	type queueItem struct {
+		node  *sitter.Node
+		depth int
+	}
+
+	queue := []queueItem{{node: node, depth: 0}}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if current.node == nil || current.depth > maxDepth {
+			continue
+		}
+		if current.depth > 0 {
+			if nameNode := current.node.ChildByFieldName("name"); nameNode != nil {
+				return strings.TrimSpace(nameNode.Content(src))
+			}
+		}
+		if current.depth == maxDepth {
+			continue
+		}
+		for i := 0; i < int(current.node.ChildCount()); i++ {
+			queue = append(queue, queueItem{node: current.node.Child(i), depth: current.depth + 1})
+		}
+	}
+	return ""
+}
+
+func findFirstDescendantType(node *sitter.Node, src []byte, nodeType string, maxDepth int) string {
+	type queueItem struct {
+		node  *sitter.Node
+		depth int
+	}
+
+	queue := []queueItem{{node: node, depth: 0}}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if current.node == nil || current.depth > maxDepth {
+			continue
+		}
+		if current.depth > 0 && current.node.Type() == nodeType {
+			return strings.TrimSpace(current.node.Content(src))
+		}
+		if current.depth == maxDepth {
+			continue
+		}
+		for i := 0; i < int(current.node.ChildCount()); i++ {
+			queue = append(queue, queueItem{node: current.node.Child(i), depth: current.depth + 1})
+		}
+	}
+	return ""
+}
+
+func hasChildType(node *sitter.Node, nodeType string) bool {
+	if node == nil {
+		return false
+	}
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child != nil && child.Type() == nodeType {
+			return true
+		}
+	}
+	return false
 }

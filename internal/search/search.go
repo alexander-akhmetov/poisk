@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/akhmetov/poisk/internal/config"
 	"github.com/akhmetov/poisk/internal/embed"
@@ -54,7 +55,7 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int, folders [
 	for _, sq := range subQueries {
 		// Determine which queries to run (with possible expansion)
 		textQueries := []string{sq.Text}
-		if sq.Mode != "fts" && s.cfg.Search.QueryExpansion && s.llmClient != nil {
+		if sq.Text != "" && sq.Mode != "fts" && s.cfg.Search.QueryExpansion && s.llmClient != nil {
 			if expanded := expandQuery(ctx, s.llmClient, sq.Text); len(expanded) > 0 {
 				textQueries = expanded
 			}
@@ -67,14 +68,14 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int, folders [
 			}
 
 			// Vector search (for hybrid and vec modes)
-			if sq.Mode != "fts" {
+			if sq.Mode != "fts" && strings.TrimSpace(q) != "" {
 				queryVec, err := s.client.Embed(ctx, q)
 				if err != nil {
 					slog.Warn("embedding failed", "error", err, "query", q)
 					anyVecErr = err
 				} else {
 					blob := store.Float32sToBlob(queryVec)
-					vecResults, vecErr := searchVec(s.store, blob, topK, folders, s.cfg.Search.SimilarityThreshold)
+					vecResults, vecErr := searchVec(s.store, blob, topK, folders, sq.Filters, s.cfg.Search.SimilarityThreshold)
 					if vecErr != nil {
 						slog.Warn("vec search failed", "error", vecErr)
 						anyVecErr = vecErr
@@ -91,7 +92,7 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int, folders [
 
 			// FTS search (for hybrid and fts modes)
 			if sq.Mode != "vec" {
-				ftsResults, ftsErr := searchFTS(s.store, q, topK, folders)
+				ftsResults, ftsErr := searchFTS(s.store, q, topK, folders, sq.Filters)
 				if ftsErr != nil {
 					slog.Warn("FTS search failed", "error", ftsErr)
 					anyFtsErr = ftsErr

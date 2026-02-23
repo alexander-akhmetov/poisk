@@ -68,6 +68,41 @@ func (c *Config) GetName() string {
 	}
 }
 
+func TestTreeSitterGoValueDeclarations(t *testing.T) {
+	content := `package example
+
+const DefaultName = "poisk"
+var defaultPort = 8080
+`
+	chunks, err := File("example.go", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	foundConst := false
+	foundVar := false
+	for _, c := range chunks {
+		if c.Symbol == "DefaultName" {
+			foundConst = true
+			if c.Kind != "const_declaration" {
+				t.Errorf("const kind = %q, want const_declaration", c.Kind)
+			}
+		}
+		if c.Symbol == "defaultPort" {
+			foundVar = true
+			if c.Kind != "var_declaration" {
+				t.Errorf("var kind = %q, want var_declaration", c.Kind)
+			}
+		}
+	}
+	if !foundConst {
+		t.Error("did not find const declaration symbol 'DefaultName'")
+	}
+	if !foundVar {
+		t.Error("did not find var declaration symbol 'defaultPort'")
+	}
+}
+
 func TestTreeSitterPython(t *testing.T) {
 	content := `def greet(name):
     return f"Hello, {name}!"
@@ -115,6 +150,32 @@ class Greeter:
 	}
 }
 
+func TestTreeSitterPythonAssignment(t *testing.T) {
+	content := `DEFAULT_TIMEOUT = 30
+
+def greet():
+    return DEFAULT_TIMEOUT
+`
+	chunks, err := File("example.py", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, c := range chunks {
+		if c.Symbol == "DEFAULT_TIMEOUT" {
+			found = true
+			if c.Kind != "expression_statement" {
+				t.Errorf("kind = %q, want expression_statement", c.Kind)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("did not find assignment symbol 'DEFAULT_TIMEOUT'")
+	}
+}
+
 func TestTreeSitterRust(t *testing.T) {
 	content := `fn main() {
     println!("Hello, world!");
@@ -153,6 +214,42 @@ impl Config {
 	}
 }
 
+func TestTreeSitterRustConstAndModule(t *testing.T) {
+	content := `const MAX_RETRIES: usize = 3;
+
+mod parser {
+    pub fn run() {}
+}
+`
+	chunks, err := File("example.rs", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	foundConst := false
+	foundMod := false
+	for _, c := range chunks {
+		if c.Symbol == "MAX_RETRIES" {
+			foundConst = true
+			if c.Kind != "const_item" {
+				t.Errorf("const kind = %q, want const_item", c.Kind)
+			}
+		}
+		if c.Symbol == "parser" {
+			foundMod = true
+			if c.Kind != "mod_item" {
+				t.Errorf("mod kind = %q, want mod_item", c.Kind)
+			}
+		}
+	}
+	if !foundConst {
+		t.Error("did not find rust const symbol 'MAX_RETRIES'")
+	}
+	if !foundMod {
+		t.Error("did not find rust module symbol 'parser'")
+	}
+}
+
 func TestTreeSitterJavaScript(t *testing.T) {
 	content := `function greet(name) {
     return "Hello, " + name + "!";
@@ -184,6 +281,39 @@ class Greeter {
 	}
 	if !found {
 		t.Error("did not find function 'greet'")
+	}
+}
+
+func TestTreeSitterJavaScriptVariableDeclaration(t *testing.T) {
+	content := `var fallbackValue = 42;
+const cacheKey = "main";
+`
+	chunks, err := File("example.js", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	foundVar := false
+	foundConst := false
+	for _, c := range chunks {
+		if c.Symbol == "fallbackValue" {
+			foundVar = true
+			if c.Kind != "variable_declaration" {
+				t.Errorf("var kind = %q, want variable_declaration", c.Kind)
+			}
+		}
+		if c.Symbol == "cacheKey" {
+			foundConst = true
+			if c.Kind != "lexical_declaration" {
+				t.Errorf("const kind = %q, want lexical_declaration", c.Kind)
+			}
+		}
+	}
+	if !foundVar {
+		t.Error("did not find javascript var symbol 'fallbackValue'")
+	}
+	if !foundConst {
+		t.Error("did not find javascript const symbol 'cacheKey'")
 	}
 }
 
@@ -253,6 +383,32 @@ export function App() {
 	}
 	if !found {
 		t.Error("did not find function 'App' in TSX")
+	}
+}
+
+func TestTreeSitterTypeScriptEnumDeclaration(t *testing.T) {
+	content := `enum Mode {
+  Fast,
+  Slow
+}
+`
+	chunks, err := File("example.ts", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, c := range chunks {
+		if c.Symbol == "Mode" {
+			found = true
+			if c.Kind != "enum_declaration" {
+				t.Errorf("kind = %q, want enum_declaration", c.Kind)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Error("did not find enum declaration symbol 'Mode'")
 	}
 }
 

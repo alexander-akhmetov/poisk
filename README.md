@@ -100,6 +100,8 @@ poisk index
 
 # Search from the command line
 poisk search "authentication middleware"
+poisk search "lex:retry backoff lang:go kind:function_declaration"
+poisk search "vec:error handling | lex:symbol:OpenDB language:go"
 
 # Show index status
 poisk status
@@ -128,6 +130,12 @@ Add to your Claude Code MCP config:
 - **search** — `{query, top_k?, folders?}` — hybrid semantic + keyword search, optionally filtered to specific folders
 - **reindex** — `{folder?, force?}` — re-index configured folders
 
+Typed query syntax:
+- `lex:<text>` — keyword-only retrieval
+- `vec:<text>` — semantic-only retrieval
+- ` | ` — compose multiple sub-queries (e.g. `lex:exact | vec:similar`)
+- Metadata filters in any sub-query: `lang:` / `language:`, `kind:` / `chunk_kind:`, `sym:` / `symbol:`
+
 #### Resources
 
 - **poisk://index-status** — JSON with folder stats, file/chunk counts, vec0/FTS5 availability
@@ -138,7 +146,7 @@ Add to your Claude Code MCP config:
 cmd/poisk/           CLI entry point (serve/index/search/status)
 internal/
   config/            TOML config parsing
-  store/             SQLite + sqlite-vec + FTS5 storage layer (schema v2)
+  store/             SQLite + sqlite-vec + FTS5 storage layer (schema v3)
   embed/             OpenAI-compatible embedding client
   chunk/             Tree-sitter AST chunking + markdown section chunking + fixed-window fallback
   index/             Incremental file indexer with mtime tracking

@@ -6,7 +6,7 @@ import (
 	"github.com/akhmetov/poisk/internal/store"
 )
 
-func searchVec(s *store.Store, queryBlob []byte, topK int, folders []string, threshold float64) ([]Result, error) {
+func searchVec(s *store.Store, queryBlob []byte, topK int, folders []string, filters MetadataFilters, threshold float64) ([]Result, error) {
 	if !s.VecAvailable() {
 		return nil, nil
 	}
@@ -25,6 +25,30 @@ func searchVec(s *store.Store, queryBlob []byte, topK int, folders []string, thr
 		query += " AND e.source IN (" + placeholders + ")"
 		for _, f := range folders {
 			args = append(args, f)
+		}
+	}
+	if len(filters.Languages) > 0 {
+		placeholders := strings.Repeat("?,", len(filters.Languages))
+		placeholders = placeholders[:len(placeholders)-1]
+		query += " AND e.language IN (" + placeholders + ")"
+		for _, v := range filters.Languages {
+			args = append(args, v)
+		}
+	}
+	if len(filters.Kinds) > 0 {
+		placeholders := strings.Repeat("?,", len(filters.Kinds))
+		placeholders = placeholders[:len(placeholders)-1]
+		query += " AND e.chunk_kind IN (" + placeholders + ")"
+		for _, v := range filters.Kinds {
+			args = append(args, v)
+		}
+	}
+	if len(filters.Symbols) > 0 {
+		placeholders := strings.Repeat("?,", len(filters.Symbols))
+		placeholders = placeholders[:len(placeholders)-1]
+		query += " AND LOWER(e.symbol) IN (" + placeholders + ")"
+		for _, v := range filters.Symbols {
+			args = append(args, v)
 		}
 	}
 	query += " ORDER BY v.distance ASC"

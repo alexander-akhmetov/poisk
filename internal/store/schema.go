@@ -2,7 +2,7 @@ package store
 
 import "strconv"
 
-const schemaVersion = 2
+const schemaVersion = 3
 
 const schemaVersionDDL = `
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -45,4 +45,4 @@ func vec0DDL(dims int) string {
 	return `CREATE VIRTUAL TABLE IF NOT EXISTS vec_embeddings USING vec0(embedding float[` + strconv.Itoa(dims) + `] distance_metric=cosine)`
 }
 
-const fts5DDL = `CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(chunk_text, id UNINDEXED, source UNINDEXED, file_path UNINDEXED, line_num UNINDEXED, folder UNINDEXED, end_line UNINDEXED, language UNINDEXED, chunk_kind UNINDEXED, symbol UNINDEXED)`
+const fts5DDL = `CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(chunk_text, id UNINDEXED, source UNINDEXED, file_path UNINDEXED, line_num UNINDEXED, folder UNINDEXED, end_line UNINDEXED, language, chunk_kind, symbol)`

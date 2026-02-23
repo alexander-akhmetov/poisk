@@ -52,7 +52,7 @@ type MultiGetInput struct {
 func registerTools(server *gomcp.Server, indexer *index.Indexer, searcher *search.Searcher, db *store.Store, cfg *config.Config) {
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "search",
-		Description: "Search indexed source code and documents using hybrid semantic + keyword search. Supports typed queries: 'lex:term' for keyword-only, 'vec:term' for semantic-only, and ' | ' to compose sub-queries (e.g. 'lex:exact | vec:similar').",
+		Description: "Search indexed source code and documents using hybrid semantic + keyword search. Supports typed queries: 'lex:term' for keyword-only, 'vec:term' for semantic-only, and ' | ' to compose sub-queries (e.g. 'lex:exact | vec:similar'). Metadata filters are supported in any sub-query: language (lang:/language:), kind (kind:/chunk_kind:), and symbol (sym:/symbol:).",
 	}, func(ctx context.Context, _ *gomcp.CallToolRequest, args SearchInput) (*gomcp.CallToolResult, any, error) {
 		results, err := searcher.Search(ctx, args.Query, args.TopK, args.Folders)
 		if err != nil && len(results) == 0 {

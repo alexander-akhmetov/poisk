@@ -134,21 +134,71 @@ func buildPrefixOR(tokens []string) string {
 	return strings.Join(parts, " OR ")
 }
 
+func escapeFTSToken(token string) string {
+	return strings.ReplaceAll(token, `"`, `""`)
+}
+
+func buildColumnFilterClause(column string, values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(values))
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf(`%s:"%s"`, column, escapeFTSToken(v)))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	return "(" + strings.Join(parts, " OR ") + ")"
+}
+
+func buildMetadataClause(filters MetadataFilters) string {
+	var clauses []string
+	if c := buildColumnFilterClause("language", filters.Languages); c != "" {
+		clauses = append(clauses, c)
+	}
+	if c := buildColumnFilterClause("chunk_kind", filters.Kinds); c != "" {
+		clauses = append(clauses, c)
+	}
+	if c := buildColumnFilterClause("symbol", filters.Symbols); c != "" {
+		clauses = append(clauses, c)
+	}
+	return strings.Join(clauses, " AND ")
+}
+
+func combineFTSQuery(textClause, metadataClause string) string {
+	if textClause == "" {
+		return metadataClause
+	}
+	if metadataClause == "" {
+		return textClause
+	}
+	return textClause + " AND " + metadataClause
+}
+
 // searchFTS performs staged FTS retrieval: strict AND → relaxed OR → prefix OR.
 // Each stage only runs if prior stages returned fewer results than topK.
 // Results are deduplicated across stages by filepath:line.
-func searchFTS(s *store.Store, queryText string, topK int, folders []string) ([]Result, error) {
+func searchFTS(s *store.Store, queryText string, topK int, folders []string, filters MetadataFilters) ([]Result, error) {
 	if !s.FTSAvailable() {
 		return nil, nil
 	}
 
 	tokens := tokenize(queryText)
-	if len(tokens) == 0 {
+	if len(tokens) == 0 && filters.Empty() {
 		return nil, nil
 	}
 
 	seen := make(map[string]bool)
 	var results []Result
+	metadataClause := buildMetadataClause(filters)
 
 	addResults := func(staged []Result) {
 		for _, r := range staged {
@@ -161,7 +211,7 @@ func searchFTS(s *store.Store, queryText string, topK int, folders []string) ([]
 	}
 
 	// Stage A: strict AND
-	if q := buildStrictAND(tokens); q != "" {
+	if q := combineFTSQuery(buildStrictAND(tokens), metadataClause); q != "" {
 		rows, err := queryFTS(s, q, topK*5, folders)
 		if err != nil {
 			return nil, err
@@ -170,8 +220,8 @@ func searchFTS(s *store.Store, queryText string, topK int, folders []string) ([]
 	}
 
 	// Stage B: relaxed OR (only if A returned < topK)
-	if len(results) < topK {
-		if q := buildRelaxedOR(tokens); q != "" {
+	if len(results) < topK && len(tokens) > 0 {
+		if q := combineFTSQuery(buildRelaxedOR(tokens), metadataClause); q != "" {
 			rows, err := queryFTS(s, q, topK*5, folders)
 			if err != nil {
 				return nil, err
@@ -181,8 +231,8 @@ func searchFTS(s *store.Store, queryText string, topK int, folders []string) ([]
 	}
 
 	// Stage C: prefix OR (only if A+B returned < topK)
-	if len(results) < topK {
-		if q := buildPrefixOR(tokens); q != "" {
+	if len(results) < topK && len(tokens) > 0 {
+		if q := combineFTSQuery(buildPrefixOR(tokens), metadataClause); q != "" {
 			rows, err := queryFTS(s, q, topK*5, folders)
 			if err != nil {
 				return nil, err

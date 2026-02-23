@@ -169,3 +169,69 @@ func TestBuildPrefixOR(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildMetadataClause(t *testing.T) {
+	tests := []struct {
+		name    string
+		filters MetadataFilters
+		want    string
+	}{
+		{
+			name: "all filters",
+			filters: MetadataFilters{
+				Languages: []string{"go"},
+				Kinds:     []string{"function_declaration"},
+				Symbols:   []string{"fetchuser"},
+			},
+			want: `language:"go" AND chunk_kind:"function_declaration" AND symbol:"fetchuser"`,
+		},
+		{
+			name: "or within same field",
+			filters: MetadataFilters{
+				Languages: []string{"go", "rust"},
+			},
+			want: `(language:"go" OR language:"rust")`,
+		},
+		{
+			name: "empty",
+			filters: MetadataFilters{
+				Languages: nil,
+				Kinds:     nil,
+				Symbols:   nil,
+			},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildMetadataClause(tt.filters)
+			if got != tt.want {
+				t.Fatalf("buildMetadataClause(%+v) = %q, want %q", tt.filters, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCombineFTSQuery(t *testing.T) {
+	tests := []struct {
+		name     string
+		text     string
+		metadata string
+		want     string
+	}{
+		{"both", `"hello" AND "world"`, `language:"go"`, `"hello" AND "world" AND language:"go"`},
+		{"text only", `"hello"`, "", `"hello"`},
+		{"metadata only", "", `symbol:"open"`, `symbol:"open"`},
+		{"neither", "", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := combineFTSQuery(tt.text, tt.metadata)
+			if got != tt.want {
+				t.Fatalf("combineFTSQuery(%q, %q) = %q, want %q", tt.text, tt.metadata, got, tt.want)
+			}
+		})
+	}
+}
