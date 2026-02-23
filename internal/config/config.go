@@ -54,6 +54,8 @@ type SearchConfig struct {
 	QueryExpansion      bool    `toml:"query_expansion"`
 	Rerank              bool    `toml:"rerank"`
 	RerankTopN          int     `toml:"rerank_top_n"`
+	RerankTopWeight     float64 `toml:"rerank_retrieval_weight_top"`
+	RerankBottomWeight  float64 `toml:"rerank_retrieval_weight_bottom"`
 }
 
 type IndexConfig struct {
@@ -83,7 +85,10 @@ func DefaultConfig() Config {
 			FTSWeight:           1.1,
 			OriginalQueryWeight: 1.0,
 			ExpandedQueryWeight: 0.25,
+			Rerank:              true,
 			RerankTopN:          20,
+			RerankTopWeight:     0.8,
+			RerankBottomWeight:  0.2,
 		},
 		Index: IndexConfig{
 			ExcludePatterns: []string{".git", "node_modules", "vendor", "__pycache__", ".venv"},
@@ -168,6 +173,18 @@ func (c *Config) validate() error {
 	}
 	if c.Search.ExpandedQueryWeight <= 0 || math.IsNaN(c.Search.ExpandedQueryWeight) || math.IsInf(c.Search.ExpandedQueryWeight, 0) {
 		return fmt.Errorf("search.expanded_query_weight must be > 0, got %v", c.Search.ExpandedQueryWeight)
+	}
+	if c.Search.RerankTopN <= 0 {
+		return fmt.Errorf("search.rerank_top_n must be > 0, got %v", c.Search.RerankTopN)
+	}
+	if math.IsNaN(c.Search.RerankTopWeight) || math.IsInf(c.Search.RerankTopWeight, 0) || c.Search.RerankTopWeight < 0 || c.Search.RerankTopWeight > 1 {
+		return fmt.Errorf("search.rerank_retrieval_weight_top must be between 0 and 1, got %v", c.Search.RerankTopWeight)
+	}
+	if math.IsNaN(c.Search.RerankBottomWeight) || math.IsInf(c.Search.RerankBottomWeight, 0) || c.Search.RerankBottomWeight < 0 || c.Search.RerankBottomWeight > 1 {
+		return fmt.Errorf("search.rerank_retrieval_weight_bottom must be between 0 and 1, got %v", c.Search.RerankBottomWeight)
+	}
+	if c.Search.RerankTopWeight < c.Search.RerankBottomWeight {
+		return fmt.Errorf("search.rerank_retrieval_weight_top must be >= search.rerank_retrieval_weight_bottom, got %v < %v", c.Search.RerankTopWeight, c.Search.RerankBottomWeight)
 	}
 	return nil
 }

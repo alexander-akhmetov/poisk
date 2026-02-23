@@ -18,9 +18,25 @@ func TestParseScores(t *testing.T) {
 		want     []float64
 	}{
 		{"valid", "8,3,7", 3, []float64{8, 3, 7}},
-		{"with spaces", " 8 , 3 , 7 ", 3, []float64{8, 3, 7}},
+		{"json array", "[8,3,7]", 3, []float64{8, 3, 7}},
+		{"json object", `{"scores":[8,3,7]}`, 3, []float64{8, 3, 7}},
+		{"json fenced", "```json\n[8,3,7]\n```", 3, []float64{8, 3, 7}},
+		{"indexed noisy", "1: 8\n2: 3\n3: 7", 3, []float64{8, 3, 7}},
+		{"prefixed csv", "scores for 3 docs: 8,3,7", 3, []float64{8, 3, 7}},
+		{"numeric prefixed csv", "3 docs: 8,3,7", 3, []float64{8, 3, 7}},
+		{"numbered csv list", "1. 8, 2. 7, 3. 6", 3, []float64{8, 7, 6}},
+		{"csv with trailing metadata", "8 (confidence 0.9),3,7", 3, []float64{8, 3, 7}},
+		{"csv with leading score and metadata field", "7. confidence: 0.9,6,5", 3, []float64{7, 6, 5}},
+		{"csv with leading score word and metadata field", "7 confidence: 0.9,6,5", 3, []float64{7, 6, 5}},
+		{"numeric with trailing scale text", "8 3 7 out of 10", 3, []float64{8, 3, 7}},
+		{"numeric first score equals expected", "3 8 7 out of 10", 3, []float64{3, 8, 7}},
+		{"numeric with range preamble", "Scores (0-10): 8 3 7", 3, []float64{8, 3, 7}},
+		{"single score natural language", "1 out of 10", 1, []float64{1}},
+		{"single score bare value", "1", 1, []float64{1}},
+		{"bare ranking indexes are rejected", "1 2 3", 3, nil},
 		{"clamped", "12,-1,5", 3, []float64{10, 0, 5}},
 		{"wrong count", "8,3", 3, nil},
+		{"wrong count extra", "[8,3,7,5]", 3, []float64{8, 3, 7}},
 		{"non-numeric", "high,low,mid", 3, nil},
 		{"empty", "", 3, nil},
 	}
@@ -47,7 +63,7 @@ func TestParseScores(t *testing.T) {
 }
 
 func TestRerankResults(t *testing.T) {
-	server := newTestLLMServer("9,2,8")
+	server := newTestLLMServer("[9,2,8]")
 	defer server.Close()
 
 	client := llm.NewClient(server.URL, "", "test")
@@ -57,7 +73,10 @@ func TestRerankResults(t *testing.T) {
 		{FilePath: "c.go", LineNum: 1, Text: "func C()", Score: 0.7},
 	}
 
-	reranked := rerankResults(context.Background(), client, "test query", results, 3)
+	reranked := rerankResults(context.Background(), client, "test query", results, 3, rerankBlendConfig{
+		TopRetrievalWeight:    0.8,
+		BottomRetrievalWeight: 0.2,
+	})
 	if len(reranked) != 3 {
 		t.Fatalf("got %d results, want 3", len(reranked))
 	}
@@ -70,7 +89,7 @@ func TestRerankResults(t *testing.T) {
 }
 
 func TestRerankTopN(t *testing.T) {
-	server := newTestLLMServer("9,2")
+	server := newTestLLMServer(`{"scores":[9,2]}`)
 	defer server.Close()
 
 	client := llm.NewClient(server.URL, "", "test")
@@ -81,7 +100,10 @@ func TestRerankTopN(t *testing.T) {
 		{FilePath: "d.go", LineNum: 1, Text: "func D()", Score: 0.6},
 	}
 
-	reranked := rerankResults(context.Background(), client, "test", results, 2)
+	reranked := rerankResults(context.Background(), client, "test", results, 2, rerankBlendConfig{
+		TopRetrievalWeight:    0.8,
+		BottomRetrievalWeight: 0.2,
+	})
 	if len(reranked) != 4 {
 		t.Fatalf("got %d results, want 4 (2 reranked + 2 passthrough)", len(reranked))
 	}
@@ -99,7 +121,10 @@ func TestRerankFallbackOnError(t *testing.T) {
 		{FilePath: "b.go", LineNum: 1, Score: 0.8},
 	}
 
-	reranked := rerankResults(context.Background(), client, "test", original, 2)
+	reranked := rerankResults(context.Background(), client, "test", original, 2, rerankBlendConfig{
+		TopRetrievalWeight:    0.8,
+		BottomRetrievalWeight: 0.2,
+	})
 	if len(reranked) != 2 {
 		t.Fatalf("got %d results, want 2", len(reranked))
 	}
@@ -134,8 +159,53 @@ func TestRerankFallbackOnBadParse(t *testing.T) {
 		{FilePath: "b.go", LineNum: 1, Score: 0.8},
 	}
 
-	reranked := rerankResults(context.Background(), client, "test", original, 2)
+	reranked := rerankResults(context.Background(), client, "test", original, 2, rerankBlendConfig{
+		TopRetrievalWeight:    0.8,
+		BottomRetrievalWeight: 0.2,
+	})
 	if reranked[0].FilePath != "a.go" {
 		t.Fatalf("expected original order preserved on bad parse")
+	}
+}
+
+func TestRerankFallbackOnWrongCount(t *testing.T) {
+	server := newTestLLMServer("[9]")
+	defer server.Close()
+
+	client := llm.NewClient(server.URL, "", "test")
+	original := []Result{
+		{FilePath: "a.go", LineNum: 1, Score: 0.9},
+		{FilePath: "b.go", LineNum: 1, Score: 0.8},
+	}
+
+	reranked := rerankResults(context.Background(), client, "test", original, 2, rerankBlendConfig{
+		TopRetrievalWeight:    0.8,
+		BottomRetrievalWeight: 0.2,
+	})
+	if reranked[0].FilePath != "a.go" || reranked[1].FilePath != "b.go" {
+		t.Fatalf("expected original order preserved on wrong score count")
+	}
+}
+
+func TestRerankStableOrderOnTiedScores(t *testing.T) {
+	server := newTestLLMServer("[5,5,5]")
+	defer server.Close()
+
+	client := llm.NewClient(server.URL, "", "test")
+	original := []Result{
+		{FilePath: "a.go", LineNum: 1, Score: 0.5},
+		{FilePath: "b.go", LineNum: 1, Score: 0.5},
+		{FilePath: "c.go", LineNum: 1, Score: 0.5},
+	}
+
+	reranked := rerankResults(context.Background(), client, "test", original, 3, rerankBlendConfig{
+		TopRetrievalWeight:    0.5,
+		BottomRetrievalWeight: 0.5,
+	})
+	if len(reranked) != 3 {
+		t.Fatalf("got %d results, want 3", len(reranked))
+	}
+	if reranked[0].FilePath != "a.go" || reranked[1].FilePath != "b.go" || reranked[2].FilePath != "c.go" {
+		t.Fatalf("expected stable ordering for tied scores, got [%s %s %s]", reranked[0].FilePath, reranked[1].FilePath, reranked[2].FilePath)
 	}
 }

@@ -139,7 +139,10 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int, folders [
 		if topN <= 0 {
 			topN = 20
 		}
-		merged = rerankResults(ctx, s.llmClient, query, merged, topN)
+		merged = rerankResults(ctx, s.llmClient, query, merged, topN, rerankBlendConfig{
+			TopRetrievalWeight:    s.cfg.Search.RerankTopWeight,
+			BottomRetrievalWeight: s.cfg.Search.RerankBottomWeight,
+		})
 	}
 
 	// Annotate results with context from folder config

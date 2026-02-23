@@ -20,6 +20,15 @@ func TestDefaultConfigHasFusionWeights(t *testing.T) {
 	if cfg.Search.ExpandedQueryWeight >= cfg.Search.OriginalQueryWeight {
 		t.Fatalf("default expanded query weight should be lower than original: original=%v expanded=%v", cfg.Search.OriginalQueryWeight, cfg.Search.ExpandedQueryWeight)
 	}
+	if !cfg.Search.Rerank {
+		t.Fatalf("default rerank should be enabled")
+	}
+	if cfg.Search.RerankTopN <= 0 {
+		t.Fatalf("default rerank_top_n must be positive, got %d", cfg.Search.RerankTopN)
+	}
+	if cfg.Search.RerankTopWeight < cfg.Search.RerankBottomWeight {
+		t.Fatalf("default rerank blend should favor higher retrieval weight at top: top=%v bottom=%v", cfg.Search.RerankTopWeight, cfg.Search.RerankBottomWeight)
+	}
 }
 
 func TestValidateRejectsInvalidFusionWeights(t *testing.T) {
@@ -52,6 +61,29 @@ func TestValidateRejectsInvalidFusionWeights(t *testing.T) {
 			name: "vec weight nan",
 			edit: func(c *Config) { c.Search.VecWeight = math.NaN() },
 			want: "search.vec_weight",
+		},
+		{
+			name: "rerank topn <= 0",
+			edit: func(c *Config) { c.Search.RerankTopN = 0 },
+			want: "search.rerank_top_n",
+		},
+		{
+			name: "rerank top weight out of range",
+			edit: func(c *Config) { c.Search.RerankTopWeight = 1.2 },
+			want: "search.rerank_retrieval_weight_top",
+		},
+		{
+			name: "rerank bottom weight out of range",
+			edit: func(c *Config) { c.Search.RerankBottomWeight = -0.1 },
+			want: "search.rerank_retrieval_weight_bottom",
+		},
+		{
+			name: "rerank top below bottom",
+			edit: func(c *Config) {
+				c.Search.RerankTopWeight = 0.2
+				c.Search.RerankBottomWeight = 0.8
+			},
+			want: "search.rerank_retrieval_weight_top",
 		},
 	}
 

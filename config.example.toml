@@ -24,6 +24,16 @@ fts_weight = 1.1
 # By default, original query sets dominate expanded variants.
 original_query_weight = 1.0
 expanded_query_weight = 0.25
+# Enable LLM reranking when [llm] is configured (default true).
+# Set to false to disable reranking globally.
+rerank = true
+# Number of top retrieved results to rerank.
+# Higher values may improve quality but increase latency/token cost.
+rerank_top_n = 20
+# Retrieval-vs-reranker blend for reranked candidates (0.0-1.0).
+# Top ranks keep more retrieval signal by default; lower ranks trust reranker more.
+rerank_retrieval_weight_top = 0.8
+rerank_retrieval_weight_bottom = 0.2
 
 [index]
 # All supported languages are always enabled for tree-sitter AST chunking:
