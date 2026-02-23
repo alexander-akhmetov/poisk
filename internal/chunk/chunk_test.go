@@ -224,7 +224,7 @@ func TestChunkMarkdownLargeSection(t *testing.T) {
 	// Create a section that exceeds maxSectionChars
 	var sb strings.Builder
 	sb.WriteString("# Big Section\n\n")
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		sb.WriteString("This is paragraph number ")
 		sb.WriteString(strings.Repeat("x", 50))
 		sb.WriteString(" with enough content.\n\n")

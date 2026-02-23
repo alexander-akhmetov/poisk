@@ -14,14 +14,14 @@ Return ONLY the alternative queries, one per line, without numbering or explanat
 
 Query: %s`
 
-func expandQuery(ctx context.Context, client *llm.Client, original string) ([]string, error) {
+func expandQuery(ctx context.Context, client *llm.Client, original string) []string {
 	prompt := strings.Replace(expandPrompt, "%s", original, 1)
 	resp, err := client.Complete(ctx, []llm.Message{
 		{Role: "user", Content: prompt},
 	}, 0.3, 200)
 	if err != nil {
 		slog.Warn("query expansion failed, using original", "error", err)
-		return []string{original}, nil
+		return []string{original}
 	}
 
 	variants := []string{original}
@@ -37,5 +37,5 @@ func expandQuery(ctx context.Context, client *llm.Client, original string) ([]st
 	}
 
 	slog.Info("query expanded", "original", original, "variants", len(variants))
-	return variants, nil
+	return variants
 }

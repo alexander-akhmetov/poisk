@@ -57,11 +57,7 @@ func TestRerankResults(t *testing.T) {
 		{FilePath: "c.go", LineNum: 1, Text: "func C()", Score: 0.7},
 	}
 
-	reranked, err := rerankResults(context.Background(), client, "test query", results, 3)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	reranked := rerankResults(context.Background(), client, "test query", results, 3)
 	if len(reranked) != 3 {
 		t.Fatalf("got %d results, want 3", len(reranked))
 	}
@@ -85,17 +81,14 @@ func TestRerankTopN(t *testing.T) {
 		{FilePath: "d.go", LineNum: 1, Text: "func D()", Score: 0.6},
 	}
 
-	reranked, err := rerankResults(context.Background(), client, "test", results, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	reranked := rerankResults(context.Background(), client, "test", results, 2)
 	if len(reranked) != 4 {
 		t.Fatalf("got %d results, want 4 (2 reranked + 2 passthrough)", len(reranked))
 	}
 }
 
 func TestRerankFallbackOnError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "error", http.StatusInternalServerError)
 	}))
 	defer server.Close()
@@ -106,10 +99,7 @@ func TestRerankFallbackOnError(t *testing.T) {
 		{FilePath: "b.go", LineNum: 1, Score: 0.8},
 	}
 
-	reranked, err := rerankResults(context.Background(), client, "test", original, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	reranked := rerankResults(context.Background(), client, "test", original, 2)
 	if len(reranked) != 2 {
 		t.Fatalf("got %d results, want 2", len(reranked))
 	}
@@ -120,7 +110,7 @@ func TestRerankFallbackOnError(t *testing.T) {
 }
 
 func TestRerankFallbackOnBadParse(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		type choice struct {
 			Message struct {
 				Content string `json:"content"`
@@ -134,7 +124,7 @@ func TestRerankFallbackOnBadParse(t *testing.T) {
 			}{Content: "I cannot score these"}}},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -144,10 +134,7 @@ func TestRerankFallbackOnBadParse(t *testing.T) {
 		{FilePath: "b.go", LineNum: 1, Score: 0.8},
 	}
 
-	reranked, err := rerankResults(context.Background(), client, "test", original, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	reranked := rerankResults(context.Background(), client, "test", original, 2)
 	if reranked[0].FilePath != "a.go" {
 		t.Fatalf("expected original order preserved on bad parse")
 	}

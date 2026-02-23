@@ -15,12 +15,21 @@ func TestScanFolderRespectsGitignore(t *testing.T) {
 	}
 
 	// Create files: one visible, one in ignored dir, one with ignored extension
-	os.MkdirAll(filepath.Join(dir, "src"), 0755)
-	os.MkdirAll(filepath.Join(dir, "build"), 0755)
-	os.WriteFile(filepath.Join(dir, "src", "main.go"), []byte("package main"), 0644)
-	os.WriteFile(filepath.Join(dir, "build", "out.go"), []byte("package main"), 0644)
-	os.WriteFile(filepath.Join(dir, "debug.log"), []byte("log"), 0644)
-	os.WriteFile(filepath.Join(dir, "README.md"), []byte("# readme"), 0644)
+	for _, d := range []string{"src", "build"} {
+		if err := os.MkdirAll(filepath.Join(dir, d), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range []struct{ path, content string }{
+		{filepath.Join("src", "main.go"), "package main"},
+		{filepath.Join("build", "out.go"), "package main"},
+		{"debug.log", "log"},
+		{"README.md", "# readme"},
+	} {
+		if err := os.WriteFile(filepath.Join(dir, f.path), []byte(f.content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	files, err := scanFolder(dir, []string{".git"}, 512)
 	if err != nil {
@@ -50,7 +59,9 @@ func TestScanFolderRespectsGitignore(t *testing.T) {
 func TestScanFolderNoGitignore(t *testing.T) {
 	dir, _ := filepath.EvalSymlinks(t.TempDir())
 
-	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	files, err := scanFolder(dir, []string{".git"}, 512)
 	if err != nil {

@@ -36,6 +36,7 @@ func NewSearcher(s *store.Store, c *embed.Client, cfg *config.Config, llmClient 
 	return &Searcher{store: s, client: c, cfg: cfg, llmClient: llmClient}
 }
 
+//nolint:gocyclo
 func (s *Searcher) Search(ctx context.Context, query string, topK int, folders []string) ([]Result, error) {
 	if topK <= 0 {
 		topK = s.cfg.Search.DefaultTopK
@@ -54,8 +55,7 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int, folders [
 		// Determine which queries to run (with possible expansion)
 		textQueries := []string{sq.Text}
 		if sq.Mode != "fts" && s.cfg.Search.QueryExpansion && s.llmClient != nil {
-			expanded, err := expandQuery(ctx, s.llmClient, sq.Text)
-			if err == nil && len(expanded) > 0 {
+			if expanded := expandQuery(ctx, s.llmClient, sq.Text); len(expanded) > 0 {
 				textQueries = expanded
 			}
 		}
@@ -132,12 +132,7 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int, folders [
 		if topN <= 0 {
 			topN = 20
 		}
-		reranked, rerankErr := rerankResults(ctx, s.llmClient, query, merged, topN)
-		if rerankErr != nil {
-			slog.Warn("reranking failed", "error", rerankErr)
-		} else {
-			merged = reranked
-		}
+		merged = rerankResults(ctx, s.llmClient, query, merged, topN)
 	}
 
 	// Annotate results with context from folder config

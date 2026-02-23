@@ -48,6 +48,7 @@ type MultiGetInput struct {
 	MaxBytes int    `json:"max_bytes,omitempty" jsonschema:"Max total bytes to return (default 100000)"`
 }
 
+//nolint:gocyclo
 func registerTools(server *gomcp.Server, indexer *index.Indexer, searcher *search.Searcher, db *store.Store, cfg *config.Config) {
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "search",
@@ -144,7 +145,7 @@ func registerTools(server *gomcp.Server, indexer *index.Indexer, searcher *searc
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "get",
 		Description: "Retrieve the indexed content of a single file, optionally filtered by line range",
-	}, func(ctx context.Context, _ *gomcp.CallToolRequest, args GetInput) (*gomcp.CallToolResult, any, error) {
+	}, func(_ context.Context, _ *gomcp.CallToolRequest, args GetInput) (*gomcp.CallToolResult, any, error) {
 		source := resolveSource(args.FilePath, cfg)
 		if source == "" {
 			return nil, nil, fmt.Errorf("file %q not under any configured folder", args.FilePath)
@@ -201,7 +202,7 @@ func registerTools(server *gomcp.Server, indexer *index.Indexer, searcher *searc
 	gomcp.AddTool(server, &gomcp.Tool{
 		Name:        "multi_get",
 		Description: "Retrieve indexed content for multiple files. Accepts comma-separated paths or glob patterns.",
-	}, func(ctx context.Context, _ *gomcp.CallToolRequest, args MultiGetInput) (*gomcp.CallToolResult, any, error) {
+	}, func(_ context.Context, _ *gomcp.CallToolRequest, args MultiGetInput) (*gomcp.CallToolResult, any, error) {
 		maxBytes := args.MaxBytes
 		if maxBytes <= 0 {
 			maxBytes = 100_000

@@ -21,10 +21,10 @@ type Indexer struct {
 }
 
 type FolderStats struct {
-	Folder                     string
-	FilesProcessed             int
-	FilesSkipped               int
-	ChunksCreated              int
+	Folder                 string
+	FilesProcessed         int
+	FilesSkipped           int
+	ChunksCreated          int
 	Errors                 int
 	FilesSkippedParseError int
 }
@@ -54,6 +54,7 @@ func (ix *Indexer) IndexFolder(ctx context.Context, folder string) (FolderStats,
 	return ix.indexFolder(ctx, folder)
 }
 
+//nolint:gocyclo
 func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats, error) {
 	stats := FolderStats{Folder: folder}
 

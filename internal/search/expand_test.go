@@ -11,7 +11,7 @@ import (
 )
 
 func newTestLLMServer(response string) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		type choice struct {
 			Message struct {
 				Content string `json:"content"`
@@ -25,7 +25,7 @@ func newTestLLMServer(response string) *httptest.Server {
 			}{Content: response}}},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 }
 
@@ -34,11 +34,7 @@ func TestExpandQuery(t *testing.T) {
 	defer server.Close()
 
 	client := llm.NewClient(server.URL, "", "test")
-	variants, err := expandQuery(context.Background(), client, "code search")
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	variants := expandQuery(context.Background(), client, "code search")
 	if len(variants) < 2 {
 		t.Fatalf("expected at least 2 variants, got %d", len(variants))
 	}
@@ -52,28 +48,20 @@ func TestExpandQueryMaxVariants(t *testing.T) {
 	defer server.Close()
 
 	client := llm.NewClient(server.URL, "", "test")
-	variants, err := expandQuery(context.Background(), client, "test query")
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	variants := expandQuery(context.Background(), client, "test query")
 	if len(variants) > 4 {
 		t.Fatalf("expected at most 4 variants, got %d", len(variants))
 	}
 }
 
 func TestExpandQueryFallback(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "error", http.StatusInternalServerError)
 	}))
 	defer server.Close()
 
 	client := llm.NewClient(server.URL, "", "test")
-	variants, err := expandQuery(context.Background(), client, "fallback test")
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	variants := expandQuery(context.Background(), client, "fallback test")
 	if len(variants) != 1 || variants[0] != "fallback test" {
 		t.Fatalf("expected [fallback test], got %v", variants)
 	}

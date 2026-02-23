@@ -18,9 +18,9 @@ Documents:
 DOCS_PLACEHOLDER
 Return ONLY a comma-separated list of scores (e.g., "8,3,7,5"). One score per document, in order.`
 
-func rerankResults(ctx context.Context, client *llm.Client, query string, results []Result, topN int) ([]Result, error) {
+func rerankResults(ctx context.Context, client *llm.Client, query string, results []Result, topN int) []Result {
 	if len(results) == 0 {
-		return results, nil
+		return results
 	}
 	if topN <= 0 || topN > len(results) {
 		topN = len(results)
@@ -47,13 +47,13 @@ func rerankResults(ctx context.Context, client *llm.Client, query string, result
 	}, 0.0, 100)
 	if err != nil {
 		slog.Warn("reranking failed, keeping original order", "error", err)
-		return results, nil
+		return results
 	}
 
 	scores := parseScores(resp, len(candidates))
 	if scores == nil {
 		slog.Warn("failed to parse reranker scores, keeping original order", "response", resp)
-		return results, nil
+		return results
 	}
 
 	// Position-aware blending: top results keep more retrieval weight
@@ -83,7 +83,7 @@ func rerankResults(ctx context.Context, client *llm.Client, query string, result
 		}
 	}
 
-	return reranked, nil
+	return reranked
 }
 
 func parseScores(resp string, expected int) []float64 {

@@ -225,7 +225,7 @@ func splitOversizedNode(node *sitter.Node, content string, src []byte, lang stri
 	bufStart := int(node.StartPoint().Row) + 1
 	parentSymbol := extractSymbol(node, src, lang)
 
-	for i := 0; i < childCount; i++ {
+	for i := range childCount {
 		child := node.Child(i)
 		if child == nil {
 			continue
@@ -277,6 +277,7 @@ func splitOversizedNode(node *sitter.Node, content string, src []byte, lang stri
 	return chunks
 }
 
+//nolint:gocyclo
 func extractSymbol(node *sitter.Node, src []byte, lang string) string {
 	if nameNode := node.ChildByFieldName("name"); nameNode != nil {
 		return nameNode.Content(src)
