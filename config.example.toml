@@ -16,6 +16,14 @@ rrf_k = 60
 similarity_threshold = 0.3
 # Default number of results returned
 default_top_k = 20
+# Weighted RRF: modality contribution multipliers.
+# Increase fts_weight for exact-token precision, vec_weight for semantic recall.
+vec_weight = 1.0
+fts_weight = 1.1
+# Weighted RRF: query source multipliers.
+# By default, original query sets dominate expanded variants.
+original_query_weight = 1.0
+expanded_query_weight = 0.25
 
 [index]
 # All supported languages are always enabled for tree-sitter AST chunking:

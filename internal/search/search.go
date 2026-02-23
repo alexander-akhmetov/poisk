@@ -47,8 +47,8 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int, folders [
 		return nil, nil
 	}
 
-	var allVecSets [][]Result
-	var allFtsSets [][]Result
+	var allSets []weightedResultSet
+	var vecSetCount, ftsSetCount int
 	var anyVecErr, anyFtsErr error
 
 	for _, sq := range subQueries {
@@ -60,7 +60,12 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int, folders [
 			}
 		}
 
-		for _, q := range textQueries {
+		for i, q := range textQueries {
+			source := querySourceExpanded
+			if i == 0 {
+				source = querySourceOriginal
+			}
+
 			// Vector search (for hybrid and vec modes)
 			if sq.Mode != "fts" {
 				queryVec, err := s.client.Embed(ctx, q)
@@ -74,7 +79,12 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int, folders [
 						slog.Warn("vec search failed", "error", vecErr)
 						anyVecErr = vecErr
 					} else if len(vecResults) > 0 {
-						allVecSets = append(allVecSets, vecResults)
+						allSets = append(allSets, weightedResultSet{
+							Results:  vecResults,
+							Modality: retrievalModalityVec,
+							Source:   source,
+						})
+						vecSetCount++
 					}
 				}
 			}
@@ -86,14 +96,19 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int, folders [
 					slog.Warn("FTS search failed", "error", ftsErr)
 					anyFtsErr = ftsErr
 				} else if len(ftsResults) > 0 {
-					allFtsSets = append(allFtsSets, ftsResults)
+					allSets = append(allSets, weightedResultSet{
+						Results:  ftsResults,
+						Modality: retrievalModalityFTS,
+						Source:   source,
+					})
+					ftsSetCount++
 				}
 			}
 		}
 	}
 
 	// If all backends failed, surface the error
-	if len(allVecSets) == 0 && len(allFtsSets) == 0 {
+	if vecSetCount == 0 && ftsSetCount == 0 {
 		if anyVecErr != nil && anyFtsErr != nil {
 			return nil, fmt.Errorf("all search backends failed: vec: %w; fts: %w", anyVecErr, anyFtsErr)
 		}
@@ -110,21 +125,12 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int, folders [
 		searchErr = errors.Join(anyVecErr, anyFtsErr)
 	}
 
-	// Use single-pair merge for single hybrid query (backward compat), multi merge otherwise
-	totalSets := len(allVecSets) + len(allFtsSets)
-	var merged []Result
-	if totalSets <= 2 && len(subQueries) == 1 && subQueries[0].Mode == "hybrid" {
-		var vecResults, ftsResults []Result
-		if len(allVecSets) > 0 {
-			vecResults = allVecSets[0]
-		}
-		if len(allFtsSets) > 0 {
-			ftsResults = allFtsSets[0]
-		}
-		merged = mergeResults(vecResults, ftsResults, s.cfg.Search.RRFk, topK)
-	} else {
-		merged = mergeMultiResults(allVecSets, allFtsSets, s.cfg.Search.RRFk, topK)
-	}
+	merged := mergeResultSets(allSets, s.cfg.Search.RRFk, topK, fusionWeights{
+		Vec:      s.cfg.Search.VecWeight,
+		FTS:      s.cfg.Search.FTSWeight,
+		Original: s.cfg.Search.OriginalQueryWeight,
+		Expanded: s.cfg.Search.ExpandedQueryWeight,
+	})
 
 	// Rerank using original query (not expanded variants)
 	if s.cfg.Search.Rerank && s.llmClient != nil && len(merged) > 0 {

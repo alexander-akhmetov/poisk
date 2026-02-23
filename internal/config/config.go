@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,6 +47,10 @@ type SearchConfig struct {
 	RRFk                int     `toml:"rrf_k"` // RRF constant, default 60
 	SimilarityThreshold float64 `toml:"similarity_threshold"`
 	DefaultTopK         int     `toml:"default_top_k"`
+	VecWeight           float64 `toml:"vec_weight"`
+	FTSWeight           float64 `toml:"fts_weight"`
+	OriginalQueryWeight float64 `toml:"original_query_weight"`
+	ExpandedQueryWeight float64 `toml:"expanded_query_weight"`
 	QueryExpansion      bool    `toml:"query_expansion"`
 	Rerank              bool    `toml:"rerank"`
 	RerankTopN          int     `toml:"rerank_top_n"`
@@ -74,6 +79,10 @@ func DefaultConfig() Config {
 			RRFk:                60,
 			SimilarityThreshold: 0.3,
 			DefaultTopK:         20,
+			VecWeight:           1.0,
+			FTSWeight:           1.1,
+			OriginalQueryWeight: 1.0,
+			ExpandedQueryWeight: 0.25,
 			RerankTopN:          20,
 		},
 		Index: IndexConfig{
@@ -147,6 +156,18 @@ func (c *Config) validate() error {
 	}
 	if c.Search.SimilarityThreshold < 0 || c.Search.SimilarityThreshold > 1 {
 		return fmt.Errorf("search.similarity_threshold must be between 0 and 1, got %v", c.Search.SimilarityThreshold)
+	}
+	if c.Search.VecWeight <= 0 || math.IsNaN(c.Search.VecWeight) || math.IsInf(c.Search.VecWeight, 0) {
+		return fmt.Errorf("search.vec_weight must be > 0, got %v", c.Search.VecWeight)
+	}
+	if c.Search.FTSWeight <= 0 || math.IsNaN(c.Search.FTSWeight) || math.IsInf(c.Search.FTSWeight, 0) {
+		return fmt.Errorf("search.fts_weight must be > 0, got %v", c.Search.FTSWeight)
+	}
+	if c.Search.OriginalQueryWeight <= 0 || math.IsNaN(c.Search.OriginalQueryWeight) || math.IsInf(c.Search.OriginalQueryWeight, 0) {
+		return fmt.Errorf("search.original_query_weight must be > 0, got %v", c.Search.OriginalQueryWeight)
+	}
+	if c.Search.ExpandedQueryWeight <= 0 || math.IsNaN(c.Search.ExpandedQueryWeight) || math.IsInf(c.Search.ExpandedQueryWeight, 0) {
+		return fmt.Errorf("search.expanded_query_weight must be > 0, got %v", c.Search.ExpandedQueryWeight)
 	}
 	return nil
 }

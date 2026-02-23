@@ -139,6 +139,107 @@ func TestMergeResultsDefaultK(t *testing.T) {
 	}
 }
 
+func TestMergeResultSetsWeightedContribution(t *testing.T) {
+	sets := []weightedResultSet{
+		{
+			Results:  []Result{{FilePath: "original.go", LineNum: 1}},
+			Modality: retrievalModalityVec,
+			Source:   querySourceOriginal,
+		},
+		{
+			Results:  []Result{{FilePath: "expanded.go", LineNum: 1}},
+			Modality: retrievalModalityFTS,
+			Source:   querySourceExpanded,
+		},
+	}
+
+	got := mergeResultSets(sets, 60, 10, fusionWeights{
+		Vec:      1.0,
+		FTS:      1.0,
+		Original: 1.0,
+		Expanded: 0.2,
+	})
+	if len(got) != 2 {
+		t.Fatalf("got %d results, want 2", len(got))
+	}
+	if got[0].FilePath != "original.go" {
+		t.Fatalf("first result = %s, want original.go", got[0].FilePath)
+	}
+
+	wantOriginal := 1.0 / 61.0
+	wantExpanded := 0.2 / 61.0
+	if abs(got[0].Score-wantOriginal) > 1e-9 {
+		t.Errorf("original score = %f, want %f", got[0].Score, wantOriginal)
+	}
+	if abs(got[1].Score-wantExpanded) > 1e-9 {
+		t.Errorf("expanded score = %f, want %f", got[1].Score, wantExpanded)
+	}
+}
+
+func TestMergeResultSetsTieBreakByPath(t *testing.T) {
+	sets := []weightedResultSet{
+		{
+			Results: []Result{
+				{FilePath: "b.go", LineNum: 1},
+				{FilePath: "a.go", LineNum: 1},
+			},
+			Modality: retrievalModalityVec,
+			Source:   querySourceOriginal,
+		},
+		{
+			Results: []Result{
+				{FilePath: "a.go", LineNum: 1},
+				{FilePath: "b.go", LineNum: 1},
+			},
+			Modality: retrievalModalityFTS,
+			Source:   querySourceOriginal,
+		},
+	}
+
+	got := mergeResultSets(sets, 60, 10, neutralFusionWeights())
+	if len(got) != 2 {
+		t.Fatalf("got %d results, want 2", len(got))
+	}
+	if got[0].FilePath != "a.go" || got[1].FilePath != "b.go" {
+		t.Fatalf("tie order = [%s, %s], want [a.go, b.go]", got[0].FilePath, got[1].FilePath)
+	}
+}
+
+func TestMergeResultSetsNeutralWeightsCompatible(t *testing.T) {
+	vec := [][]Result{
+		{
+			{FilePath: "a.go", LineNum: 1},
+			{FilePath: "b.go", LineNum: 1},
+		},
+	}
+	fts := [][]Result{
+		{
+			{FilePath: "b.go", LineNum: 1},
+			{FilePath: "c.go", LineNum: 1},
+		},
+	}
+
+	legacy := mergeMultiResults(vec, fts, 60, 10)
+
+	sets := []weightedResultSet{
+		{Results: vec[0], Modality: retrievalModalityVec, Source: querySourceOriginal},
+		{Results: fts[0], Modality: retrievalModalityFTS, Source: querySourceOriginal},
+	}
+	weighted := mergeResultSets(sets, 60, 10, neutralFusionWeights())
+
+	if len(legacy) != len(weighted) {
+		t.Fatalf("length mismatch: legacy=%d weighted=%d", len(legacy), len(weighted))
+	}
+	for i := range legacy {
+		if legacy[i].FilePath != weighted[i].FilePath || legacy[i].LineNum != weighted[i].LineNum {
+			t.Fatalf("result[%d] mismatch: legacy=%s:%d weighted=%s:%d", i, legacy[i].FilePath, legacy[i].LineNum, weighted[i].FilePath, weighted[i].LineNum)
+		}
+		if abs(legacy[i].Score-weighted[i].Score) > 1e-9 {
+			t.Fatalf("score[%d] mismatch: legacy=%f weighted=%f", i, legacy[i].Score, weighted[i].Score)
+		}
+	}
+}
+
 func abs(x float64) float64 {
 	if x < 0 {
 		return -x
