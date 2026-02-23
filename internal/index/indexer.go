@@ -54,7 +54,6 @@ func (ix *Indexer) IndexFolder(ctx context.Context, folder string) (FolderStats,
 	return ix.indexFolder(ctx, folder)
 }
 
-//nolint:gocyclo
 func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats, error) {
 	stats := FolderStats{Folder: folder}
 
@@ -112,10 +111,11 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 
 		info, err := os.Stat(filePath)
 		if err != nil {
+			ix.clearStaleEntries(folder, filePath, "stat_failed", err)
 			stats.Errors++
 			continue
 		}
-		mtime := info.ModTime().Unix()
+		mtime := info.ModTime().UnixNano()
 
 		// Skip if unchanged
 		if oldMtime, ok := tracked[filePath]; ok && oldMtime == mtime && !changed {
@@ -127,17 +127,25 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 
 		content, err := os.ReadFile(filePath)
 		if err != nil {
+			ix.clearStaleEntries(folder, filePath, "read_failed", err)
 			stats.Errors++
 			continue
 		}
 
 		chunks, chunkErr := chunk.File(filePath, string(content))
 		if chunkErr != nil {
+			ix.clearStaleEntries(folder, filePath, "chunk_parse_failed", chunkErr)
 			slog.Warn("chunk parse error", "file", filePath, "error", chunkErr)
 			stats.FilesSkippedParseError++
 			continue
 		}
 		if len(chunks) == 0 {
+			// Remove stale chunks if this file used to produce indexable content.
+			if err := ix.store.InsertEntries(folder, filePath, nil); err != nil {
+				slog.Error("clear entries failed", "file", filePath, "error", err)
+				stats.Errors++
+				continue
+			}
 			if err := ix.store.SetFileMtime(folder, filePath, mtime); err != nil {
 				slog.Error("set mtime failed", "file", filePath, "error", err)
 				stats.Errors++
@@ -167,6 +175,7 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 
 			embeddings, err := ix.client.EmbedBatch(ctx, texts[i:end])
 			if err != nil {
+				ix.clearStaleEntries(folder, filePath, "embedding_failed", err)
 				slog.Error("embedding failed", "file", filePath, "error", err)
 				stats.Errors++
 				embedFailed = true
@@ -218,4 +227,11 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 	}
 
 	return stats, nil
+}
+
+func (ix *Indexer) clearStaleEntries(source, filePath, reason string, cause error) {
+	slog.Warn("clearing stale indexed data after indexing failure", "source", source, "file", filePath, "reason", reason, "error", cause)
+	if err := ix.store.InsertEntries(source, filePath, nil); err != nil {
+		slog.Error("failed to clear stale indexed data", "source", source, "file", filePath, "reason", reason, "error", err)
+	}
 }

@@ -153,8 +153,11 @@ func cmdSearch() error {
 
 	ctx := context.Background()
 	results, err := searcher.Search(ctx, query, cfg.Search.DefaultTopK, nil)
-	if err != nil {
+	if err != nil && len(results) == 0 {
 		return fmt.Errorf("search: %w", err)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: partial search failure: %v\n", err)
 	}
 
 	for _, r := range results {
