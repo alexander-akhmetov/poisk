@@ -163,7 +163,7 @@ func parseScoresFromJSON(resp string, expected int) []float64 {
 			continue
 		}
 		if scores := decodeJSONScores(candidate); scores != nil {
-			return clampAndPick(scores, expected, false)
+			return clampAndPick(scores, expected)
 		}
 	}
 	return nil
@@ -211,7 +211,7 @@ func parseScoresFromIndexedText(resp string, expected int) []float64 {
 		}
 		values = append(values, score)
 	}
-	return clampAndPick(values, expected, false)
+	return clampAndPick(values, expected)
 }
 
 func parseScoresFromCSV(resp string, expected int) []float64 {
@@ -243,7 +243,7 @@ func parseScoresFromCSV(resp string, expected int) []float64 {
 		}
 		values = append(values, score)
 	}
-	return clampAndPick(values, expected, false)
+	return clampAndPick(values, expected)
 }
 
 func parseScoresFromNumericFallback(resp string, expected int) []float64 {
@@ -276,7 +276,7 @@ func parseScoresFromNumericTokens(resp string, expected int) []float64 {
 		return nil
 	}
 	if expected == 1 {
-		return clampAndPick(values, expected, false)
+		return clampAndPick(values, expected)
 	}
 	if len(values) == expected && looksLikeOrdinalPrefix(values, expected) {
 		return nil
@@ -286,16 +286,16 @@ func parseScoresFromNumericTokens(resp string, expected int) []float64 {
 		for i := 1; i < len(values); i += 2 {
 			pairs = append(pairs, values[i])
 		}
-		return clampAndPick(pairs, expected, false)
+		return clampAndPick(pairs, expected)
 	}
 	if len(values) > expected && looksLikeOrdinalPrefix(values, expected) {
 		remaining := values[expected:]
 		if len(remaining) >= expected {
-			return clampAndPick(remaining, expected, false)
+			return clampAndPick(remaining, expected)
 		}
 		return nil
 	}
-	return clampAndPick(values, expected, false)
+	return clampAndPick(values, expected)
 }
 
 func looksLikeIndexedPairs(values []float64) bool {
@@ -312,7 +312,7 @@ func looksLikeOrdinalPrefix(values []float64, expected int) bool {
 	if len(values) < expected {
 		return false
 	}
-	for i := 0; i < expected; i++ {
+	for i := range expected {
 		expectedIndex := float64(i + 1)
 		if math.Abs(values[i]-expectedIndex) > 1e-6 {
 			return false
@@ -321,17 +321,13 @@ func looksLikeOrdinalPrefix(values []float64, expected int) bool {
 	return true
 }
 
-func clampAndPick(values []float64, expected int, pickTail bool) []float64 {
+func clampAndPick(values []float64, expected int) []float64 {
 	if len(values) < expected {
 		return nil
 	}
-	start := 0
-	if pickTail {
-		start = len(values) - expected
-	}
 	scores := make([]float64, expected)
-	for i := 0; i < expected; i++ {
-		score := values[start+i]
+	for i := range expected {
+		score := values[i]
 		if score < 0 {
 			score = 0
 		}
@@ -371,9 +367,9 @@ func stripCodeFence(resp string) string {
 	return strings.TrimSpace(strings.Join(lines[1:last], "\n"))
 }
 
-func extractJSONRange(resp string, open, close byte) string {
+func extractJSONRange(resp string, open, closeByte byte) string {
 	start := strings.IndexByte(resp, open)
-	end := strings.LastIndexByte(resp, close)
+	end := strings.LastIndexByte(resp, closeByte)
 	if start == -1 || end == -1 || end <= start {
 		return ""
 	}

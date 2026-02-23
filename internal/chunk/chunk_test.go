@@ -160,7 +160,7 @@ func TestChunkSourceTooShort(t *testing.T) {
 func TestChunkSourceLongSpanSplit(t *testing.T) {
 	var sb strings.Builder
 	sb.WriteString("function processData(input) {\n")
-	for i := 0; i < 500; i++ {
+	for range 500 {
 		sb.WriteString("  const line = input + \"-")
 		sb.WriteString(strings.Repeat("x", 25))
 		sb.WriteString("\";\n")
@@ -194,7 +194,7 @@ func TestChunkSourceTinyNoisyFile(t *testing.T) {
 
 func TestChunkSourceOverlapMetadata(t *testing.T) {
 	var lines []string
-	for i := 0; i < 140; i++ {
+	for i := range 140 {
 		if i%8 == 0 {
 			lines = append(lines, "Section: "+strings.Repeat("S", 40))
 			continue

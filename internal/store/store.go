@@ -167,8 +167,6 @@ func (s *Store) VecAvailable() bool { return s.vecAvailable }
 func (s *Store) FTSAvailable() bool { return s.ftsAvailable }
 func (s *Store) DB() *sql.DB        { return s.db }
 
-func (s *Store) Dimensions() int { return s.dimensions }
-
 func splitStatements(ddl string) []string {
 	var stmts []string
 	for s := range strings.SplitSeq(ddl, ";") {
