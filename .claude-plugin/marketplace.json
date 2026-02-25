@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "poisk",
-      "source": ".",
+      "source": "./",
       "description": "Hybrid semantic + keyword search over source code and documents via MCP",
       "version": "1.0.0"
     }
