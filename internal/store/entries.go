@@ -61,7 +61,10 @@ func (s *Store) InsertEntries(source, filePath string, entries []Entry) error {
 		if err != nil {
 			return fmt.Errorf("insert entry: %w", err)
 		}
-		rowid, _ := res.LastInsertId()
+		rowid, err := res.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("last insert id: %w", err)
+		}
 
 		if s.vecAvailable {
 			if _, err := tx.Exec("INSERT INTO vec_embeddings (rowid, embedding) VALUES (?, ?)", rowid, blob); err != nil {

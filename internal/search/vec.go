@@ -6,6 +6,19 @@ import (
 	"github.com/alexander-akhmetov/poisk/internal/store"
 )
 
+func appendInClause(query string, args []any, column string, values []string) (string, []any) {
+	if len(values) == 0 {
+		return query, args
+	}
+	placeholders := strings.Repeat("?,", len(values))
+	placeholders = placeholders[:len(placeholders)-1]
+	query += " AND " + column + " IN (" + placeholders + ")"
+	for _, v := range values {
+		args = append(args, v)
+	}
+	return query, args
+}
+
 func searchVec(s *store.Store, queryBlob []byte, topK int, folders []string, filters MetadataFilters, threshold float64) ([]Result, error) {
 	if !s.VecAvailable() {
 		return nil, nil
@@ -40,38 +53,10 @@ func execVecQuery(s *store.Store, queryBlob []byte, topK, fetchLimit int, folder
 		WHERE v.embedding MATCH ? AND k = ?`
 	args := []any{queryBlob, fetchLimit}
 
-	if len(folders) > 0 {
-		placeholders := strings.Repeat("?,", len(folders))
-		placeholders = placeholders[:len(placeholders)-1]
-		query += " AND e.source IN (" + placeholders + ")"
-		for _, f := range folders {
-			args = append(args, f)
-		}
-	}
-	if len(filters.Languages) > 0 {
-		placeholders := strings.Repeat("?,", len(filters.Languages))
-		placeholders = placeholders[:len(placeholders)-1]
-		query += " AND e.language IN (" + placeholders + ")"
-		for _, v := range filters.Languages {
-			args = append(args, v)
-		}
-	}
-	if len(filters.Kinds) > 0 {
-		placeholders := strings.Repeat("?,", len(filters.Kinds))
-		placeholders = placeholders[:len(placeholders)-1]
-		query += " AND e.chunk_kind IN (" + placeholders + ")"
-		for _, v := range filters.Kinds {
-			args = append(args, v)
-		}
-	}
-	if len(filters.Symbols) > 0 {
-		placeholders := strings.Repeat("?,", len(filters.Symbols))
-		placeholders = placeholders[:len(placeholders)-1]
-		query += " AND LOWER(e.symbol) IN (" + placeholders + ")"
-		for _, v := range filters.Symbols {
-			args = append(args, v)
-		}
-	}
+	query, args = appendInClause(query, args, "e.source", folders)
+	query, args = appendInClause(query, args, "e.language", filters.Languages)
+	query, args = appendInClause(query, args, "e.chunk_kind", filters.Kinds)
+	query, args = appendInClause(query, args, "LOWER(e.symbol)", filters.Symbols)
 	query += " ORDER BY v.distance ASC"
 
 	rows, err := s.DB().Query(query, args...)

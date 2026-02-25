@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -15,7 +16,7 @@ Return ONLY the alternative queries, one per line, without numbering or explanat
 Query: %s`
 
 func expandQuery(ctx context.Context, client *llm.Client, original string) []string {
-	prompt := strings.Replace(expandPrompt, "%s", original, 1)
+	prompt := fmt.Sprintf(expandPrompt, original)
 	resp, err := client.Complete(ctx, []llm.Message{
 		{Role: "user", Content: prompt},
 	}, 0.3, 200)

@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/alexander-akhmetov/poisk/internal/app"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -36,7 +37,10 @@ func registerStatusResource(server *gomcp.Server, statusSvc *app.StatusService) 
 		}
 		output["folders"] = folders
 
-		data, _ := json.MarshalIndent(output, "", "  ")
+		data, err := json.MarshalIndent(output, "", "  ")
+		if err != nil {
+			return nil, fmt.Errorf("marshal status: %w", err)
+		}
 		return &gomcp.ReadResourceResult{
 			Contents: []*gomcp.ResourceContents{{
 				URI:      "poisk://index-status",

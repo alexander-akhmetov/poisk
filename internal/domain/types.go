@@ -33,12 +33,6 @@ type SearchResult struct {
 	Context  []string
 }
 
-type MetadataFilters struct {
-	Languages []string
-	Kinds     []string
-	Symbols   []string
-}
-
 type FolderStats struct {
 	Folder                 string
 	FilesProcessed         int

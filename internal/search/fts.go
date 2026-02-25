@@ -257,14 +257,7 @@ func queryFTS(s *store.Store, ftsQuery string, limit int, folders []string) ([]R
 		WHERE chunks_fts MATCH ?`
 	args := []any{ftsQuery}
 
-	if len(folders) > 0 {
-		placeholders := strings.Repeat("?,", len(folders))
-		placeholders = placeholders[:len(placeholders)-1]
-		query += " AND source IN (" + placeholders + ")"
-		for _, f := range folders {
-			args = append(args, f)
-		}
-	}
+	query, args = appendInClause(query, args, "source", folders)
 	query += " ORDER BY rank ASC LIMIT ?"
 	args = append(args, limit)
 

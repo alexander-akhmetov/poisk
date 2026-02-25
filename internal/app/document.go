@@ -81,7 +81,11 @@ func (d *DocumentService) GetMultipleDocuments(pathsCSV string, maxBytes int) ([
 					continue
 				}
 				for _, tp := range tracked {
-					matched, _ := filepath.Match(pat, tp)
+					matched, err := filepath.Match(pat, tp)
+					if err != nil {
+						slog.Warn("multi_get: bad glob pattern", "pattern", pat, "error", err)
+						break
+					}
 					if !matched {
 						matched, _ = filepath.Match(pat, filepath.Base(tp))
 					}

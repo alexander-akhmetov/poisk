@@ -37,7 +37,9 @@ make build
 
 ## Configuration
 
-Create `~/.config/poisk/config.toml`. Only `[[folders]]` is required — everything else has sensible defaults (Ollama with `nomic-embed-text` at `localhost:11434`):
+poisk needs an OpenAI-compatible embedding API. By default it uses [Ollama](https://ollama.com/) with `nomic-embed-text` at `localhost:11434`.
+
+Create `~/.config/poisk/config.toml`. Only `[[folders]]` is required — everything else has sensible defaults:
 
 ```toml
 [[folders]]
@@ -68,8 +70,8 @@ dimensions = 1536
 poisk index
 
 # Search from the command line
-poisk search "authentication middleware"
-poisk search "lex:retry backoff lang:go kind:function_declaration"
+poisk run "authentication middleware"
+poisk run "lex:retry backoff lang:go kind:function_declaration"
 
 # Show index status
 poisk status

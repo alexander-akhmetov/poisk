@@ -2,11 +2,7 @@
 // services depend on these interfaces, not on concrete implementations.
 package ports
 
-import (
-	"context"
-
-	"github.com/alexander-akhmetov/poisk/internal/domain"
-)
+import "github.com/alexander-akhmetov/poisk/internal/domain"
 
 // ChunkStore persists and retrieves indexed chunks and file metadata.
 type ChunkStore interface {
@@ -33,8 +29,3 @@ type ChunkStore interface {
 	FTSAvailable() bool
 }
 
-// Embedder produces vector embeddings from text.
-type Embedder interface {
-	Embed(ctx context.Context, text string) ([]float32, error)
-	EmbedBatch(ctx context.Context, texts []string) ([][]float32, error)
-}
