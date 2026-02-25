@@ -1,8 +1,8 @@
 # poisk
 
-Hybrid semantic + keyword search over local codebases via [MCP](https://modelcontextprotocol.io/).
+Hybrid semantic + keyword search over local files and codebases via CLI and [MCP](https://modelcontextprotocol.io/).
 
-Indexes source code and markdown files with embeddings into SQLite ([sqlite-vec](https://github.com/asg017/sqlite-vec) + FTS5) and exposes search through an MCP server that any compatible client (Claude Code, etc.) can use.
+Indexes source code and markdown files with embeddings into SQLite ([sqlite-vec](https://github.com/asg017/sqlite-vec) + FTS5) and exposes search through a CLI and MCP server that any compatible client (Claude Code, etc.) can use.
 
 ## Features
 
