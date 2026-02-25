@@ -18,8 +18,8 @@ func main() {
 		err = cmdServe()
 	case "index":
 		err = cmdIndex()
-	case "search":
-		err = cmdSearch()
+	case "run":
+		err = cmdRun()
 	case "status":
 		err = cmdStatus()
 	default:
@@ -42,7 +42,9 @@ Commands:
   index   Index configured folders
             --watch       Re-index periodically instead of once
             --interval D  Interval between cycles (default 5m)
-  search  Search indexed content
+  run     Search indexed content (full output for scripts/skills)
+            --top-k N         Max results (default from config)
+            --folders d1,d2   Filter to specific folders
   status  Show index status
 `)
 }

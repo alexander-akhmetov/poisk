@@ -126,11 +126,42 @@ func indexOnce(indexer *index.Indexer) error {
 	return nil
 }
 
-func cmdSearch() error {
-	if len(os.Args) < 3 {
-		return fmt.Errorf("usage: poisk search <query>")
+func cmdRun() error {
+	topK := 0
+	var folders []string
+	var queryParts []string
+
+	for i := 2; i < len(os.Args); i++ {
+		switch {
+		case os.Args[i] == "--top-k" || os.Args[i] == "--top_k":
+			if i+1 >= len(os.Args) {
+				return fmt.Errorf("--top-k requires a value")
+			}
+			i++
+			n, err := fmt.Sscanf(os.Args[i], "%d", &topK)
+			if n != 1 || err != nil {
+				return fmt.Errorf("invalid --top-k value: %s", os.Args[i])
+			}
+		case os.Args[i] == "--folders":
+			if i+1 >= len(os.Args) {
+				return fmt.Errorf("--folders requires a value")
+			}
+			i++
+			for _, f := range strings.Split(os.Args[i], ",") {
+				f = strings.TrimSpace(f)
+				if f != "" {
+					folders = append(folders, f)
+				}
+			}
+		default:
+			queryParts = append(queryParts, os.Args[i])
+		}
 	}
-	query := strings.Join(os.Args[2:], " ")
+
+	query := strings.Join(queryParts, " ")
+	if query == "" {
+		return fmt.Errorf("usage: poisk run <query> [--top-k N] [--folders dir1,dir2]")
+	}
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -151,17 +182,38 @@ func cmdSearch() error {
 	}
 	searcher := search.NewSearcher(db, client, cfg, llmCli)
 
+	if topK <= 0 {
+		topK = cfg.Search.DefaultTopK
+	}
+
 	ctx := context.Background()
-	results, err := searcher.Search(ctx, query, cfg.Search.DefaultTopK, nil)
+	results, err := searcher.Search(ctx, query, topK, folders)
 	if err != nil && len(results) == 0 {
 		return fmt.Errorf("search: %w", err)
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: partial search failure: %v\n", err)
+		fmt.Fprintf(os.Stderr, "WARNING: partial search failure: %v\n", err)
+	}
+
+	if len(results) == 0 {
+		fmt.Println("No results found.")
+		return nil
 	}
 
 	for _, r := range results {
-		fmt.Printf("[%.2f] %s:%d  %s\n", r.Score, r.FilePath, r.LineNum, truncate(r.Text, 100))
+		loc := fmt.Sprintf("%s:%d", r.FilePath, r.LineNum)
+		if r.EndLine > 0 && r.EndLine != r.LineNum {
+			loc = fmt.Sprintf("%s:%d-%d", r.FilePath, r.LineNum, r.EndLine)
+		}
+		meta := ""
+		if r.Symbol != "" {
+			meta = fmt.Sprintf(" [%s]", r.Symbol)
+		}
+		ctxStr := ""
+		if len(r.Context) > 0 {
+			ctxStr = fmt.Sprintf(" (%s)", strings.Join(r.Context, " > "))
+		}
+		fmt.Printf("[%.2f] %s%s%s\n%s\n\n", r.Score, loc, meta, ctxStr, r.Text)
 	}
 	return nil
 }
@@ -210,9 +262,3 @@ type FolderStatus struct {
 	Chunks      int    `json:"chunks"`
 }
 
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
-}
