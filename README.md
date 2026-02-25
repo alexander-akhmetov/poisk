@@ -6,14 +6,18 @@ Indexes source code and markdown files with embeddings into SQLite ([sqlite-vec]
 
 ## Features
 
-- **Hybrid search** — combines vector similarity (vec0 KNN) with keyword relevance (FTS5 BM25), merged via Reciprocal Rank Fusion (RRF)
+- **Hybrid search** — combines vector similarity (vec0 KNN) with keyword relevance (FTS5 BM25), merged via Reciprocal Rank Fusion
 - **Code-aware FTS** — tokenizer splits camelCase/snake_case, staged retrieval (strict AND → relaxed OR → prefix OR)
-- **Tree-sitter chunking** — AST-based code chunking for Go, Python, Rust, JavaScript, TypeScript (with JSX/TSX support)
-- **Markdown chunking** — heading-aware sections with breadcrumb paths, fence-aware splitting, large section token-budget splitting
+- **Tree-sitter chunking** — AST-based code chunking for Go, Python, Rust, JavaScript, TypeScript (with JSX/TSX)
+- **Markdown chunking** — heading-aware sections with breadcrumb paths, fence-aware splitting
 - **Incremental indexing** — tracks file mtimes, only re-embeds changed files
-- **Model change detection** — automatically rebuilds when embedding model or dimensions change
-- **MCP interface** — `search` and `reindex` tools + `poisk://index-status` resource
-- **Multiple folders** — index and search across multiple configured directories with per-folder filtering
+- **Multiple folders** — index and search across multiple configured directories
+
+## How it works
+
+poisk stores everything in a local SQLite database (`~/.local/share/poisk/poisk.db`). During indexing, source code files are parsed with [tree-sitter](https://tree-sitter.github.io/) into AST-aware chunks (functions, structs, etc.), markdown files are split by headings into sections, and each chunk is embedded via any OpenAI-compatible API (Ollama by default). The embeddings go into [sqlite-vec](https://github.com/asg017/sqlite-vec) for vector search, and the raw text goes into FTS5 for keyword search.
+
+At query time, both results are merged with Reciprocal Rank Fusion — so you get semantic understanding and exact keyword matches in one search. Indexing is incremental: only changed files (by mtime) are re-processed.
 
 ## Install
 
@@ -33,26 +37,9 @@ make build
 
 ## Configuration
 
-Create `~/.config/poisk/config.toml`:
+Create `~/.config/poisk/config.toml`. Only `[[folders]]` is required — everything else has sensible defaults (Ollama with `nomic-embed-text` at `localhost:11434`):
 
 ```toml
-[embedding]
-base_url = "http://localhost:11434/v1"  # Ollama, LM Studio, or any OpenAI-compatible API
-api_key = ""
-model = "nomic-embed-text"
-dimensions = 768
-batch_size = 50
-
-[search]
-rrf_k = 60                  # Reciprocal Rank Fusion constant (higher = more weight to top results)
-similarity_threshold = 0.3   # Minimum cosine similarity for vector results
-default_top_k = 20
-
-[index]
-languages = ["go", "python", "rust", "javascript", "typescript"]  # Tree-sitter supported languages
-exclude_patterns = [".git", "node_modules", "vendor", "__pycache__", ".venv"]
-max_file_size_kb = 512
-
 [[folders]]
 path = "/home/user/projects/myapp"
 description = "My application"
@@ -62,33 +49,15 @@ path = "/home/user/notes"
 description = "Personal notes"
 ```
 
-### Minimal config
-
-Only `[[folders]]` is required — everything else has sensible defaults:
+To use a different embedding provider, add an `[embedding]` section:
 
 ```toml
-[[folders]]
-path = "/home/user/projects/myapp"
-description = "My Go project"
+[embedding]
+base_url = "https://api.openai.com/v1"
+api_key = "sk-..."
+model = "text-embedding-3-small"
+dimensions = 1536
 ```
-
-This uses Ollama with `nomic-embed-text` at `localhost:11434` and indexes Go, Python, Rust, JavaScript, TypeScript, plus markdown/text files.
-
-### Config reference
-
-| Section | Key | Default | Description |
-|---------|-----|---------|-------------|
-| `embedding` | `base_url` | `http://localhost:11434/v1` | OpenAI-compatible embedding API |
-| `embedding` | `api_key` | `""` | API key (empty for local Ollama) |
-| `embedding` | `model` | `nomic-embed-text` | Embedding model name |
-| `embedding` | `dimensions` | `768` | Embedding dimensions |
-| `embedding` | `batch_size` | `50` | Texts per embedding API call |
-| `search` | `rrf_k` | `60` | RRF fusion constant |
-| `search` | `similarity_threshold` | `0.3` | Min cosine similarity for vector results |
-| `search` | `default_top_k` | `20` | Default number of results |
-| `index` | `languages` | `["go","python","rust","javascript","typescript"]` | Languages for tree-sitter chunking |
-| `index` | `exclude_patterns` | `[".git","node_modules","vendor","__pycache__",".venv"]` | Directories to skip |
-| `index` | `max_file_size_kb` | `512` | Skip files larger than this |
 
 ## Usage
 
@@ -101,7 +70,6 @@ poisk index
 # Search from the command line
 poisk search "authentication middleware"
 poisk search "lex:retry backoff lang:go kind:function_declaration"
-poisk search "vec:error handling | lex:symbol:OpenDB language:go"
 
 # Show index status
 poisk status
@@ -110,9 +78,19 @@ poisk status
 poisk serve
 ```
 
-### MCP Server
+### Claude Code Plugin
 
-Add to your Claude Code MCP config:
+The easiest way to use poisk with Claude Code is as a plugin:
+
+```bash
+claude plugin add alexander-akhmetov/poisk
+```
+
+This registers the MCP server automatically. After installing, index your folders and the `search` / `reindex` tools become available in Claude Code.
+
+### MCP Server (manual setup)
+
+If you prefer manual configuration, add to your MCP settings (e.g. `.claude/settings.json`):
 
 ```json
 {
@@ -125,43 +103,11 @@ Add to your Claude Code MCP config:
 }
 ```
 
-#### Tools
+### Query syntax
 
-- **search** — `{query, top_k?, folders?}` — hybrid semantic + keyword search, optionally filtered to specific folders
-- **reindex** — `{folder?, force?}` — re-index configured folders
+By default queries use hybrid search (semantic + keyword). You can control this:
 
-Typed query syntax:
-- `lex:<text>` — keyword-only retrieval
-- `vec:<text>` — semantic-only retrieval
-- ` | ` — compose multiple sub-queries (e.g. `lex:exact | vec:similar`)
-- Metadata filters in any sub-query: `lang:` / `language:`, `kind:` / `chunk_kind:`, `sym:` / `symbol:`
-
-#### Resources
-
-- **poisk://index-status** — JSON with folder stats, file/chunk counts, vec0/FTS5 availability
-
-## Architecture
-
-```
-cmd/poisk/           CLI entry point (serve/index/search/status)
-internal/
-  config/            TOML config parsing
-  store/             SQLite + sqlite-vec + FTS5 storage layer (schema v3)
-  embed/             OpenAI-compatible embedding client
-  chunk/             Tree-sitter AST chunking + markdown section chunking + fixed-window fallback
-  index/             Incremental file indexer with mtime tracking
-  search/            RRF fusion of vec0 KNN + staged FTS5 BM25
-  mcp/               MCP server (tools + resources)
-testdata/eval/       Evaluation harness queries (30 gold queries)
-```
-
-## Database
-
-SQLite with WAL mode. Data stored at `~/.local/share/poisk/poisk.db`.
-
-- `embedding_files` — file mtime tracking for incremental indexing
-- `embeddings` — chunk text + embedding BLOBs (little-endian f32) with metadata (end_line, language, chunk_kind, symbol)
-- `embedding_meta` — model/dimensions per source for change detection
-- `vec_embeddings` — sqlite-vec virtual table for KNN search
-- `chunks_fts` — FTS5 virtual table for keyword search
-- `schema_version` — tracks schema version for automatic migration
+- `lex:<text>` — keyword-only
+- `vec:<text>` — semantic-only
+- ` | ` — compose sub-queries (e.g. `lex:exact_name | vec:what does it do`)
+- Filters: `lang:go`, `kind:function_declaration`, `symbol:OpenDB`
