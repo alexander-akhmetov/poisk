@@ -1,0 +1,10 @@
+{
+  "name": "poisk",
+  "description": "Hybrid semantic + keyword search over indexed source code and documents",
+  "version": "1.0.0",
+  "author": {
+    "name": "alexander-akhmetov"
+  },
+  "repository": "https://github.com/alexander-akhmetov/poisk",
+  "license": "MIT"
+}

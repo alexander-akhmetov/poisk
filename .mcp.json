@@ -1,0 +1,6 @@
+{
+  "poisk": {
+    "command": "poisk",
+    "args": ["serve"]
+  }
+}
