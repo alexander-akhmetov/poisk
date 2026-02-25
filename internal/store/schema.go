@@ -2,7 +2,7 @@ package store
 
 import "strconv"
 
-const schemaVersion = 3
+const schemaVersion = 4
 
 const schemaVersionDDL = `
 CREATE TABLE IF NOT EXISTS schema_version (
