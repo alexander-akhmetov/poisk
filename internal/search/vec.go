@@ -3,7 +3,7 @@ package search
 import (
 	"strings"
 
-	"github.com/akhmetov/poisk/internal/store"
+	"github.com/alexander-akhmetov/poisk/internal/store"
 )
 
 func searchVec(s *store.Store, queryBlob []byte, topK int, folders []string, filters MetadataFilters, threshold float64) ([]Result, error) {

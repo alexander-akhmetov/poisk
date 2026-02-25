@@ -3,10 +3,10 @@ package app
 import (
 	"context"
 
-	"github.com/akhmetov/poisk/internal/config"
-	"github.com/akhmetov/poisk/internal/domain"
-	"github.com/akhmetov/poisk/internal/index"
-	"github.com/akhmetov/poisk/internal/ports"
+	"github.com/alexander-akhmetov/poisk/internal/config"
+	"github.com/alexander-akhmetov/poisk/internal/domain"
+	"github.com/alexander-akhmetov/poisk/internal/index"
+	"github.com/alexander-akhmetov/poisk/internal/ports"
 )
 
 type IndexService struct {

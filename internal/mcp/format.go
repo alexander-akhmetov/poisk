@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/akhmetov/poisk/internal/domain"
+	"github.com/alexander-akhmetov/poisk/internal/domain"
 )
 
 func writeSearchResult(sb *strings.Builder, r domain.SearchResult) {

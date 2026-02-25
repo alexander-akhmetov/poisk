@@ -3,9 +3,9 @@ package app
 import (
 	"log/slog"
 
-	"github.com/akhmetov/poisk/internal/config"
-	"github.com/akhmetov/poisk/internal/domain"
-	"github.com/akhmetov/poisk/internal/ports"
+	"github.com/alexander-akhmetov/poisk/internal/config"
+	"github.com/alexander-akhmetov/poisk/internal/domain"
+	"github.com/alexander-akhmetov/poisk/internal/ports"
 )
 
 type StatusService struct {

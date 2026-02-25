@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/akhmetov/poisk/internal/domain"
-	mcpserver "github.com/akhmetov/poisk/internal/mcp"
+	"github.com/alexander-akhmetov/poisk/internal/domain"
+	mcpserver "github.com/alexander-akhmetov/poisk/internal/mcp"
 )
 
 func cmdServe() error {
@@ -120,7 +120,7 @@ func cmdRun() error {
 				return fmt.Errorf("--folders requires a value")
 			}
 			i++
-			for _, f := range strings.Split(os.Args[i], ",") {
+			for f := range strings.SplitSeq(os.Args[i], ",") {
 				f = strings.TrimSpace(f)
 				if f != "" {
 					folders = append(folders, f)

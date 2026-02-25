@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/akhmetov/poisk/internal/llm"
+	"github.com/alexander-akhmetov/poisk/internal/llm"
 )
 
 const expandPrompt = `Generate 2-3 alternative search queries for the following query. These should capture different phrasings, synonyms, or related terms that might find relevant code or documents.

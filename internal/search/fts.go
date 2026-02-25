@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/akhmetov/poisk/internal/store"
+	"github.com/alexander-akhmetov/poisk/internal/store"
 )
 
 // tokenize splits text into code-aware tokens.

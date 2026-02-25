@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/akhmetov/poisk/internal/chunk"
+	"github.com/alexander-akhmetov/poisk/internal/chunk"
 	ignore "github.com/sabhiram/go-gitignore"
 )
 

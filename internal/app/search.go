@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	"github.com/akhmetov/poisk/internal/domain"
-	"github.com/akhmetov/poisk/internal/search"
+	"github.com/alexander-akhmetov/poisk/internal/domain"
+	"github.com/alexander-akhmetov/poisk/internal/search"
 )
 
 type SearchService struct {

@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/akhmetov/poisk/internal/store"
+	"github.com/alexander-akhmetov/poisk/internal/store"
 )
 
 func TestSearchFTSMetadataFilters(t *testing.T) {

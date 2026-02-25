@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/akhmetov/poisk/internal/llm"
+	"github.com/alexander-akhmetov/poisk/internal/llm"
 )
 
 type rerankBlendConfig struct {

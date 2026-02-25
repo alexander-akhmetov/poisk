@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/akhmetov/poisk/internal/config"
-	"github.com/akhmetov/poisk/internal/domain"
-	"github.com/akhmetov/poisk/internal/ports"
-	"github.com/akhmetov/poisk/internal/search"
+	"github.com/alexander-akhmetov/poisk/internal/config"
+	"github.com/alexander-akhmetov/poisk/internal/domain"
+	"github.com/alexander-akhmetov/poisk/internal/ports"
+	"github.com/alexander-akhmetov/poisk/internal/search"
 )
 
 type DocumentService struct {

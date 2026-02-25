@@ -11,11 +11,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/akhmetov/poisk/internal/config"
-	"github.com/akhmetov/poisk/internal/embed"
-	"github.com/akhmetov/poisk/internal/index"
-	"github.com/akhmetov/poisk/internal/llm"
-	"github.com/akhmetov/poisk/internal/store"
+	"github.com/alexander-akhmetov/poisk/internal/config"
+	"github.com/alexander-akhmetov/poisk/internal/embed"
+	"github.com/alexander-akhmetov/poisk/internal/index"
+	"github.com/alexander-akhmetov/poisk/internal/llm"
+	"github.com/alexander-akhmetov/poisk/internal/store"
 )
 
 func testVector(text string, dims int) []float32 {

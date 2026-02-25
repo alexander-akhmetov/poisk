@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/akhmetov/poisk/internal/llm"
+	"github.com/alexander-akhmetov/poisk/internal/llm"
 )
 
 func TestParseScores(t *testing.T) {

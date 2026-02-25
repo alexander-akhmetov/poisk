@@ -5,7 +5,7 @@ package ports
 import (
 	"context"
 
-	"github.com/akhmetov/poisk/internal/domain"
+	"github.com/alexander-akhmetov/poisk/internal/domain"
 )
 
 // ChunkStore persists and retrieves indexed chunks and file metadata.

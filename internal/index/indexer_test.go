@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akhmetov/poisk/internal/config"
-	"github.com/akhmetov/poisk/internal/embed"
-	"github.com/akhmetov/poisk/internal/store"
+	"github.com/alexander-akhmetov/poisk/internal/config"
+	"github.com/alexander-akhmetov/poisk/internal/embed"
+	"github.com/alexander-akhmetov/poisk/internal/store"
 )
 
 type testEmbeddingRequest struct {

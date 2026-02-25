@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/akhmetov/poisk/internal/treesitter/commonlisp"
+	"github.com/alexander-akhmetov/poisk/internal/treesitter/commonlisp"
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/golang"
 	"github.com/smacker/go-tree-sitter/javascript"

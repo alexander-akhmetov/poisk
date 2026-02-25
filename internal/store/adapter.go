@@ -1,6 +1,6 @@
 package store
 
-import "github.com/akhmetov/poisk/internal/domain"
+import "github.com/alexander-akhmetov/poisk/internal/domain"
 
 func (s *Store) InsertChunks(source, filePath string, chunks []domain.ChunkWithEmbedding) error {
 	entries := make([]Entry, len(chunks))

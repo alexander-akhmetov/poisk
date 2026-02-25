@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/akhmetov/poisk/internal/app"
-	"github.com/akhmetov/poisk/internal/config"
-	"github.com/akhmetov/poisk/internal/embed"
-	"github.com/akhmetov/poisk/internal/index"
-	"github.com/akhmetov/poisk/internal/search"
-	"github.com/akhmetov/poisk/internal/store"
+	"github.com/alexander-akhmetov/poisk/internal/app"
+	"github.com/alexander-akhmetov/poisk/internal/config"
+	"github.com/alexander-akhmetov/poisk/internal/embed"
+	"github.com/alexander-akhmetov/poisk/internal/index"
+	"github.com/alexander-akhmetov/poisk/internal/search"
+	"github.com/alexander-akhmetov/poisk/internal/store"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

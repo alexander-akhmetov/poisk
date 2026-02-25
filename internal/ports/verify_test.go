@@ -1,9 +1,9 @@
 package ports_test
 
 import (
-	"github.com/akhmetov/poisk/internal/embed"
-	"github.com/akhmetov/poisk/internal/ports"
-	"github.com/akhmetov/poisk/internal/store"
+	"github.com/alexander-akhmetov/poisk/internal/embed"
+	"github.com/alexander-akhmetov/poisk/internal/ports"
+	"github.com/alexander-akhmetov/poisk/internal/store"
 )
 
 // Compile-time interface checks — these ensure that concrete types satisfy

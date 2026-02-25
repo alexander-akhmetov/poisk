@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/akhmetov/poisk/internal/app"
+	"github.com/alexander-akhmetov/poisk/internal/app"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

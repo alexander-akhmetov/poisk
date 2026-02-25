@@ -1,4 +1,4 @@
-module github.com/akhmetov/poisk
+module github.com/alexander-akhmetov/poisk
 
 go 1.26.0
 
