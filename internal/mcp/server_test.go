@@ -43,7 +43,7 @@ func testEmbedServer(t *testing.T, dims int) *httptest.Server {
 			resp.Data = append(resp.Data, datum{Embedding: vec, Index: i})
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 }
 
@@ -129,7 +129,7 @@ func newMCPTestEnv(t *testing.T) *mcpTestEnv {
 		corpus:  corpus,
 		cleanup: func() {
 			cs.Close()
-			ss.Wait()
+			_ = ss.Wait()
 			db.Close()
 		},
 	}
@@ -145,7 +145,7 @@ func writeFixture(t *testing.T, dir, name, content string) string {
 		t.Fatalf("write %s: %v", name, err)
 	}
 	mt := time.Now()
-	os.Chtimes(path, mt, mt)
+	_ = os.Chtimes(path, mt, mt)
 	return path
 }
 

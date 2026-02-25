@@ -64,7 +64,7 @@ func benchEmbedServer(b *testing.B, dims int) *httptest.Server {
 			})
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 }
 

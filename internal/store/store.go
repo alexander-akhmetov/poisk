@@ -112,6 +112,7 @@ func (s *Store) initVec0() {
 	needsDrop := false
 	rows, err := s.db.Query("SELECT DISTINCT dimensions FROM embedding_meta")
 	if err == nil {
+		defer rows.Close()
 		for rows.Next() {
 			var storedDims int
 			if rows.Scan(&storedDims) == nil && storedDims != s.dimensions {
@@ -119,7 +120,9 @@ func (s *Store) initVec0() {
 				break
 			}
 		}
-		rows.Close()
+		if err := rows.Err(); err != nil {
+			slog.Warn("rows iteration error", "error", err)
+		}
 	}
 	if needsDrop {
 		slog.Info("vec0 dimensions mismatch, recreating", "new", s.dimensions)

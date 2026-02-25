@@ -39,10 +39,6 @@ type MetadataFilters struct {
 	Symbols   []string
 }
 
-func (f MetadataFilters) Empty() bool {
-	return len(f.Languages) == 0 && len(f.Kinds) == 0 && len(f.Symbols) == 0
-}
-
 type FolderStats struct {
 	Folder                 string
 	FilesProcessed         int
@@ -65,4 +61,3 @@ type IndexStatus struct {
 	FTSAvailable bool
 	Folders      []FolderStatus
 }
-

@@ -105,8 +105,8 @@ func cmdRun() error {
 	var queryParts []string
 
 	for i := 2; i < len(os.Args); i++ {
-		switch {
-		case os.Args[i] == "--top-k" || os.Args[i] == "--top_k":
+		switch os.Args[i] {
+		case "--top-k", "--top_k":
 			if i+1 >= len(os.Args) {
 				return fmt.Errorf("--top-k requires a value")
 			}
@@ -115,7 +115,7 @@ func cmdRun() error {
 			if n != 1 || err != nil {
 				return fmt.Errorf("invalid --top-k value: %s", os.Args[i])
 			}
-		case os.Args[i] == "--folders":
+		case "--folders":
 			if i+1 >= len(os.Args) {
 				return fmt.Errorf("--folders requires a value")
 			}

@@ -214,7 +214,7 @@ func chunkTreeSitter(ext, content string) ([]Chunk, error) {
 	root := tree.RootNode()
 	var chunks []Chunk
 
-	for i := 0; i < int(root.ChildCount()); i++ {
+	for i := range int(root.ChildCount()) {
 		child := root.Child(i)
 		if child == nil {
 			continue
@@ -269,7 +269,7 @@ func chunkTreeSitter(ext, content string) ([]Chunk, error) {
 }
 
 func isDecoratedContainer(node *sitter.Node, spec *langSpec) bool {
-	for i := 0; i < int(node.ChildCount()); i++ {
+	for i := range int(node.ChildCount()) {
 		child := node.Child(i)
 		if child != nil && spec.containerTypes[child.Type()] {
 			return true
@@ -282,7 +282,7 @@ func extractContainerChunks(container *sitter.Node, content string, src []byte, 
 	// Find the actual container node (may be wrapped in decorated_definition)
 	containerNode := container
 	if container.Type() == "decorated_definition" {
-		for i := 0; i < int(container.ChildCount()); i++ {
+		for i := range int(container.ChildCount()) {
 			child := container.Child(i)
 			if child != nil && spec.containerTypes[child.Type()] {
 				containerNode = child
@@ -297,7 +297,7 @@ func extractContainerChunks(container *sitter.Node, content string, src []byte, 
 	body := containerNode.ChildByFieldName("body")
 	if body == nil {
 		// Rust impl/trait: try "declaration_list" child
-		for i := 0; i < int(containerNode.ChildCount()); i++ {
+		for i := range int(containerNode.ChildCount()) {
 			child := containerNode.Child(i)
 			if child != nil && child.Type() == "declaration_list" {
 				body = child
@@ -325,7 +325,7 @@ func extractContainerChunks(container *sitter.Node, content string, src []byte, 
 		preamble.WriteString(sigText)
 	}
 
-	for i := 0; i < int(body.ChildCount()); i++ {
+	for i := range int(body.ChildCount()) {
 		child := body.Child(i)
 		if child == nil {
 			continue
@@ -504,7 +504,7 @@ func extractSymbol(node *sitter.Node, src []byte, lang string) string {
 			return typeNode.Content(src)
 		}
 		// trait_item has "name" which we already checked, but fallback to looking for type_identifier
-		for i := 0; i < int(node.ChildCount()); i++ {
+		for i := range int(node.ChildCount()) {
 			child := node.Child(i)
 			if child != nil && child.Type() == "type_identifier" {
 				return child.Content(src)
@@ -518,7 +518,7 @@ func extractSymbol(node *sitter.Node, src []byte, lang string) string {
 
 	// For Go type declarations, look for type_spec child
 	if lang == "go" && node.Type() == "type_declaration" {
-		for i := 0; i < int(node.ChildCount()); i++ {
+		for i := range int(node.ChildCount()) {
 			child := node.Child(i)
 			if child != nil && child.Type() == "type_spec" {
 				if nameNode := child.ChildByFieldName("name"); nameNode != nil {
@@ -530,7 +530,7 @@ func extractSymbol(node *sitter.Node, src []byte, lang string) string {
 
 	// For decorated definitions (Python), look inside
 	if node.Type() == "decorated_definition" {
-		for i := 0; i < int(node.ChildCount()); i++ {
+		for i := range int(node.ChildCount()) {
 			child := node.Child(i)
 			if child == nil {
 				continue
@@ -545,7 +545,7 @@ func extractSymbol(node *sitter.Node, src []byte, lang string) string {
 
 	// For export statements, try to find the declaration inside
 	if node.Type() == "export_statement" {
-		for i := 0; i < int(node.ChildCount()); i++ {
+		for i := range int(node.ChildCount()) {
 			child := node.Child(i)
 			if child == nil {
 				continue
@@ -576,16 +576,16 @@ func extractSymbol(node *sitter.Node, src []byte, lang string) string {
 	// Common Lisp: all top-level forms are list_lit
 	if lang == "commonlisp" && node.Type() == "list_lit" {
 		// defun is a nested child: list_lit → defun → defun_header → sym_lit
-		for i := 0; i < int(node.ChildCount()); i++ {
+		for i := range int(node.ChildCount()) {
 			child := node.Child(i)
 			if child == nil {
 				continue
 			}
 			if child.Type() == "defun" {
-				for j := 0; j < int(child.ChildCount()); j++ {
+				for j := range int(child.ChildCount()) {
 					hdr := child.Child(j)
 					if hdr != nil && hdr.Type() == "defun_header" {
-						for k := 0; k < int(hdr.ChildCount()); k++ {
+						for k := range int(hdr.ChildCount()) {
 							sym := hdr.Child(k)
 							if sym != nil && sym.Type() == "sym_lit" {
 								return sym.Content(src)
@@ -630,7 +630,7 @@ func findNameInDescendants(node *sitter.Node, src []byte, maxDepth int) string {
 		if current.depth == maxDepth {
 			continue
 		}
-		for i := 0; i < int(current.node.ChildCount()); i++ {
+		for i := range int(current.node.ChildCount()) {
 			queue = append(queue, queueItem{node: current.node.Child(i), depth: current.depth + 1})
 		}
 	}
@@ -656,7 +656,7 @@ func findFirstDescendantType(node *sitter.Node, src []byte, nodeType string, max
 		if current.depth == maxDepth {
 			continue
 		}
-		for i := 0; i < int(current.node.ChildCount()); i++ {
+		for i := range int(current.node.ChildCount()) {
 			queue = append(queue, queueItem{node: current.node.Child(i), depth: current.depth + 1})
 		}
 	}
@@ -667,7 +667,7 @@ func hasChildType(node *sitter.Node, nodeType string) bool {
 	if node == nil {
 		return false
 	}
-	for i := 0; i < int(node.ChildCount()); i++ {
+	for i := range int(node.ChildCount()) {
 		child := node.Child(i)
 		if child != nil && child.Type() == nodeType {
 			return true

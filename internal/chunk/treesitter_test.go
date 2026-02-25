@@ -574,7 +574,7 @@ func TestJSClassMethods(t *testing.T) {
 }
 
 func chunkSymbols(chunks []Chunk) []string {
-	var syms []string
+	syms := make([]string, 0, len(chunks))
 	for _, c := range chunks {
 		syms = append(syms, c.Symbol+"("+c.Kind+")")
 	}

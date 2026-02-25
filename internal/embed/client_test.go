@@ -10,7 +10,7 @@ import (
 
 func TestEmbedBatch(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" {
+		if r.Method != http.MethodPost {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
 		if r.URL.Path != "/embeddings" {

@@ -43,7 +43,7 @@ func testEmbedServer(t *testing.T, dims int) *httptest.Server {
 			resp.Data = append(resp.Data, datum{Embedding: vec, Index: i})
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 }
 
@@ -107,7 +107,7 @@ func writeFixture(t *testing.T, dir, name, content string) string {
 		t.Fatalf("write fixture %s: %v", name, err)
 	}
 	mt := time.Now()
-	os.Chtimes(path, mt, mt)
+	_ = os.Chtimes(path, mt, mt)
 	return path
 }
 
@@ -124,8 +124,8 @@ func TestStatusOutputStructure(t *testing.T) {
 	// Build status JSON the same way cmdStatus does.
 	status := struct {
 		Folders      []FolderStatusJSON `json:"folders"`
-		VecAvailable bool           `json:"vec_available"`
-		FTSAvailable bool           `json:"fts_available"`
+		VecAvailable bool               `json:"vec_available"`
+		FTSAvailable bool               `json:"fts_available"`
 	}{
 		VecAvailable: ts.DB.VecAvailable(),
 		FTSAvailable: ts.DB.FTSAvailable(),
@@ -275,7 +275,7 @@ func TestIndexIncrementalUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	mt := time.Now()
-	os.Chtimes(path, mt, mt)
+	_ = os.Chtimes(path, mt, mt)
 
 	stats, err := ts.Indexer.IndexAll(context.Background())
 	if err != nil {

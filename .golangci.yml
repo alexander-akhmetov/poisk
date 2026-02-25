@@ -11,6 +11,7 @@ linters:
     - bodyclose
     - copyloopvar
     - dogsled
+    - dupword
     - durationcheck
     - errcheck
     - errorlint
@@ -21,16 +22,22 @@ linters:
     - gosec
     - govet
     - ineffassign
+    - intrange
     - misspell
     - modernize
     - nakedret
     - nilerr
+    - nosprintfhostport
     - prealloc
     - revive
+    - rowserrcheck
+    - sqlclosecheck
     - staticcheck
     - unconvert
     - unparam
     - unused
+    - usestdlibvars
+    - wastedassign
     - whitespace
   settings:
     errcheck:
@@ -66,6 +73,16 @@ linters:
       - linters:
           - gocritic
         path: internal/treesitter/commonlisp/binding\.go
+      - linters:
+          - dupword
+        path: _test\.go
+      - linters:
+          - revive
+        path: internal/embed/
+        text: var-naming
+      - linters:
+          - unparam
+        path: _test\.go
 
 formatters:
   enable:

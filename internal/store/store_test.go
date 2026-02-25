@@ -390,14 +390,14 @@ func TestClearSourceAtomicity(t *testing.T) {
 
 	if s.VecAvailable() {
 		var vecCount int
-		s.DB().QueryRow("SELECT COUNT(*) FROM vec_embeddings").Scan(&vecCount)
+		_ = s.DB().QueryRow("SELECT COUNT(*) FROM vec_embeddings").Scan(&vecCount)
 		if vecCount != 0 {
 			t.Fatal("vec_embeddings not cleared")
 		}
 	}
 	if s.FTSAvailable() {
 		var ftsCount int
-		s.DB().QueryRow("SELECT COUNT(*) FROM chunks_fts WHERE source = 'src'").Scan(&ftsCount)
+		_ = s.DB().QueryRow("SELECT COUNT(*) FROM chunks_fts WHERE source = 'src'").Scan(&ftsCount)
 		if ftsCount != 0 {
 			t.Fatal("chunks_fts not cleared")
 		}
@@ -445,14 +445,14 @@ func TestDeleteFileAtomicity(t *testing.T) {
 
 	if s.VecAvailable() {
 		var vecCount int
-		s.DB().QueryRow("SELECT COUNT(*) FROM vec_embeddings").Scan(&vecCount)
+		_ = s.DB().QueryRow("SELECT COUNT(*) FROM vec_embeddings").Scan(&vecCount)
 		if vecCount != 1 {
 			t.Fatalf("expected 1 vec_embedding, got %d", vecCount)
 		}
 	}
 	if s.FTSAvailable() {
 		var ftsCount int
-		s.DB().QueryRow("SELECT COUNT(*) FROM chunks_fts WHERE source = 'src' AND file_path = 'a.go'").Scan(&ftsCount)
+		_ = s.DB().QueryRow("SELECT COUNT(*) FROM chunks_fts WHERE source = 'src' AND file_path = 'a.go'").Scan(&ftsCount)
 		if ftsCount != 0 {
 			t.Fatal("chunks_fts for a.go not cleared")
 		}
