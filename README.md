@@ -78,29 +78,13 @@ poisk status
 poisk serve
 ```
 
-### Claude Code Plugin
+### Claude Code
 
-The easiest way to use poisk with Claude Code is as a plugin:
+> **Note:** Install the `poisk` binary first (see [Install](#install) above).
 
 ```bash
-claude plugin add alexander-akhmetov/poisk
-```
-
-This registers the MCP server automatically. After installing, index your folders and the `search` / `reindex` tools become available in Claude Code.
-
-### MCP Server (manual setup)
-
-If you prefer manual configuration, add to your MCP settings (e.g. `.claude/settings.json`):
-
-```json
-{
-  "mcpServers": {
-    "poisk": {
-      "command": "poisk",
-      "args": ["serve"]
-    }
-  }
-}
+claude plugin marketplace add alexander-akhmetov/poisk
+claude plugin install poisk
 ```
 
 ### Query syntax
