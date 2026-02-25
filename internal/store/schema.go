@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS embeddings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_emb_source_file ON embeddings(source, file_path);
+CREATE INDEX IF NOT EXISTS idx_emb_meta ON embeddings(language, chunk_kind, symbol);
 
 CREATE TABLE IF NOT EXISTS embedding_meta (
     source     TEXT PRIMARY KEY NOT NULL,

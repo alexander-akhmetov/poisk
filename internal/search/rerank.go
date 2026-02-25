@@ -53,10 +53,7 @@ func rerankResults(ctx context.Context, client *llm.Client, query string, result
 
 	var docs strings.Builder
 	for i, r := range candidates {
-		text := r.Text
-		if len(text) > 200 {
-			text = text[:200] + "..."
-		}
+		text := truncateRunes(r.Text, 500)
 		fmt.Fprintf(&docs, "[%d] %s:%d %s\n", i+1, r.FilePath, r.LineNum, text)
 	}
 
@@ -374,4 +371,15 @@ func extractJSONRange(resp string, open, closeByte byte) string {
 		return ""
 	}
 	return strings.TrimSpace(resp[start : end+1])
+}
+
+func truncateRunes(s string, maxRunes int) string {
+	count := 0
+	for i := range s {
+		if count == maxRunes {
+			return s[:i] + "..."
+		}
+		count++
+	}
+	return s
 }

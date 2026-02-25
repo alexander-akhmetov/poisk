@@ -187,6 +187,31 @@ func TestRerankFallbackOnWrongCount(t *testing.T) {
 	}
 }
 
+func TestTruncateRunes(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		maxRunes int
+		want     string
+	}{
+		{"short", "hello", 500, "hello"},
+		{"exact", "abc", 3, "abc"},
+		{"truncated", "abcdef", 3, "abc..."},
+		{"empty", "", 500, ""},
+		{"utf8 multibyte", "héllo wörld", 5, "héllo..."},
+		{"chinese", "你好世界测试", 4, "你好世界..."},
+		{"emoji", "🎉🎊🎈🎁", 2, "🎉🎊..."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncateRunes(tt.input, tt.maxRunes)
+			if got != tt.want {
+				t.Fatalf("truncateRunes(%q, %d) = %q, want %q", tt.input, tt.maxRunes, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRerankStableOrderOnTiedScores(t *testing.T) {
 	server := newTestLLMServer("[5,5,5]")
 	defer server.Close()

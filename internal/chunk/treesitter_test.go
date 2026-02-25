@@ -137,16 +137,22 @@ class Greeter:
 		t.Error("did not find function 'greet'")
 	}
 
-	// Check class
-	found = false
+	// Class methods should now be individual chunks with qualified symbols
+	foundInit := false
+	foundGreetMethod := false
 	for _, c := range chunks {
-		if c.Symbol == "Greeter" {
-			found = true
-			break
+		if c.Symbol == "Greeter.__init__" {
+			foundInit = true
+		}
+		if c.Symbol == "Greeter.greet" {
+			foundGreetMethod = true
 		}
 	}
-	if !found {
-		t.Error("did not find class 'Greeter'")
+	if !foundInit {
+		t.Errorf("did not find 'Greeter.__init__', got: %v", chunkSymbols(chunks))
+	}
+	if !foundGreetMethod {
+		t.Errorf("did not find 'Greeter.greet', got: %v", chunkSymbols(chunks))
 	}
 }
 
@@ -410,6 +416,169 @@ func TestTreeSitterTypeScriptEnumDeclaration(t *testing.T) {
 	if !found {
 		t.Error("did not find enum declaration symbol 'Mode'")
 	}
+}
+
+func TestPythonClassMethods(t *testing.T) {
+	content := `class Greeter:
+    def __init__(self, name):
+        self.name = name
+
+    def greet(self):
+        return f"Hello, {self.name}!"
+`
+	chunks, err := File("example.py", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	foundInit := false
+	foundGreet := false
+	for _, c := range chunks {
+		if c.Symbol == "Greeter.__init__" {
+			foundInit = true
+			if c.Kind != "function_definition" {
+				t.Errorf("__init__ kind = %q, want function_definition", c.Kind)
+			}
+			if c.Language != "python" {
+				t.Errorf("language = %q, want python", c.Language)
+			}
+		}
+		if c.Symbol == "Greeter.greet" {
+			foundGreet = true
+			if c.Kind != "function_definition" {
+				t.Errorf("greet kind = %q, want function_definition", c.Kind)
+			}
+		}
+	}
+	if !foundInit {
+		t.Errorf("did not find chunk with symbol 'Greeter.__init__', got chunks: %v", chunkSymbols(chunks))
+	}
+	if !foundGreet {
+		t.Errorf("did not find chunk with symbol 'Greeter.greet', got chunks: %v", chunkSymbols(chunks))
+	}
+}
+
+func TestPythonDecoratedClassMethods(t *testing.T) {
+	content := `@dataclass
+class Config:
+    name: str = "default"
+
+    def validate(self):
+        return len(self.name) > 0
+`
+	chunks, err := File("example.py", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	foundValidate := false
+	for _, c := range chunks {
+		if c.Symbol == "Config.validate" {
+			foundValidate = true
+			break
+		}
+	}
+	if !foundValidate {
+		t.Errorf("did not find 'Config.validate' in decorated class, got: %v", chunkSymbols(chunks))
+	}
+}
+
+func TestRustImplMethods(t *testing.T) {
+	content := `struct Config {
+    name: String,
+}
+
+impl Config {
+    fn new(name: String) -> Self {
+        Config { name }
+    }
+
+    fn validate(&self) -> bool {
+        !self.name.is_empty()
+    }
+}
+`
+	chunks, err := File("example.rs", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	foundNew := false
+	foundValidate := false
+	for _, c := range chunks {
+		if c.Symbol == "Config.new" {
+			foundNew = true
+			if c.Kind != "function_item" {
+				t.Errorf("new kind = %q, want function_item", c.Kind)
+			}
+		}
+		if c.Symbol == "Config.validate" {
+			foundValidate = true
+		}
+	}
+	if !foundNew {
+		t.Errorf("did not find 'Config.new', got: %v", chunkSymbols(chunks))
+	}
+	if !foundValidate {
+		t.Errorf("did not find 'Config.validate', got: %v", chunkSymbols(chunks))
+	}
+
+	// struct should still be a separate chunk
+	foundStruct := false
+	for _, c := range chunks {
+		if c.Symbol == "Config" && c.Kind == "struct_item" {
+			foundStruct = true
+			break
+		}
+	}
+	if !foundStruct {
+		t.Errorf("did not find struct 'Config', got: %v", chunkSymbols(chunks))
+	}
+}
+
+func TestJSClassMethods(t *testing.T) {
+	content := `class Greeter {
+    constructor(name) {
+        this.name = name;
+    }
+
+    greet() {
+        return "Hello, " + this.name + "!";
+    }
+}
+`
+	chunks, err := File("example.js", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	foundConstructor := false
+	foundGreet := false
+	for _, c := range chunks {
+		if c.Symbol == "Greeter.constructor" {
+			foundConstructor = true
+			if c.Kind != "method_definition" {
+				t.Errorf("constructor kind = %q, want method_definition", c.Kind)
+			}
+		}
+		if c.Symbol == "Greeter.greet" {
+			foundGreet = true
+		}
+	}
+	if !foundConstructor {
+		t.Errorf("did not find 'Greeter.constructor', got: %v", chunkSymbols(chunks))
+	}
+	if !foundGreet {
+		t.Errorf("did not find 'Greeter.greet', got: %v", chunkSymbols(chunks))
+	}
+}
+
+func chunkSymbols(chunks []Chunk) []string {
+	var syms []string
+	for _, c := range chunks {
+		syms = append(syms, c.Symbol+"("+c.Kind+")")
+	}
+	return syms
 }
 
 func TestTreeSitterUnsupportedExtension(t *testing.T) {

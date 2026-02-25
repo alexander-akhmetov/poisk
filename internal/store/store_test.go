@@ -341,6 +341,124 @@ func TestSchemaVersionMigrationDropsOldData(t *testing.T) {
 	}
 }
 
+func TestIdxEmbMetaExists(t *testing.T) {
+	s := openTestStore(t)
+
+	var count int
+	err := s.DB().QueryRow(
+		"SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_emb_meta'",
+	).Scan(&count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatal("expected idx_emb_meta index to exist")
+	}
+}
+
+func TestClearSourceAtomicity(t *testing.T) {
+	s := openTestStore(t)
+
+	if err := s.SetFileMtime("src", "a.go", 100); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.InsertEntries("src", "a.go", []Entry{
+		{LineNum: 1, Text: "func A()", Embedding: []float32{1, 0, 0}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateMeta("src", "model", 3); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.ClearSource("src"); err != nil {
+		t.Fatal(err)
+	}
+
+	count, _ := s.Count("src")
+	if count != 0 {
+		t.Fatal("embeddings not cleared")
+	}
+	_, ok, _ := s.GetFileMtime("src", "a.go")
+	if ok {
+		t.Fatal("embedding_files not cleared")
+	}
+	changed, _ := s.ModelChanged("src", "model", 3)
+	if !changed {
+		t.Fatal("embedding_meta not cleared")
+	}
+
+	if s.VecAvailable() {
+		var vecCount int
+		s.DB().QueryRow("SELECT COUNT(*) FROM vec_embeddings").Scan(&vecCount)
+		if vecCount != 0 {
+			t.Fatal("vec_embeddings not cleared")
+		}
+	}
+	if s.FTSAvailable() {
+		var ftsCount int
+		s.DB().QueryRow("SELECT COUNT(*) FROM chunks_fts WHERE source = 'src'").Scan(&ftsCount)
+		if ftsCount != 0 {
+			t.Fatal("chunks_fts not cleared")
+		}
+	}
+}
+
+func TestDeleteFileAtomicity(t *testing.T) {
+	s := openTestStore(t)
+
+	if err := s.SetFileMtime("src", "a.go", 100); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetFileMtime("src", "b.go", 200); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.InsertEntries("src", "a.go", []Entry{
+		{LineNum: 1, Text: "func A()", Embedding: []float32{1, 0, 0}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.InsertEntries("src", "b.go", []Entry{
+		{LineNum: 1, Text: "func B()", Embedding: []float32{0, 1, 0}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.DeleteFile("src", "a.go"); err != nil {
+		t.Fatal(err)
+	}
+
+	// a.go should be gone
+	count, _ := s.Count("src")
+	if count != 1 {
+		t.Fatalf("expected 1 remaining entry, got %d", count)
+	}
+	_, ok, _ := s.GetFileMtime("src", "a.go")
+	if ok {
+		t.Fatal("a.go mtime not deleted")
+	}
+	// b.go should remain
+	_, ok, _ = s.GetFileMtime("src", "b.go")
+	if !ok {
+		t.Fatal("b.go mtime should still exist")
+	}
+
+	if s.VecAvailable() {
+		var vecCount int
+		s.DB().QueryRow("SELECT COUNT(*) FROM vec_embeddings").Scan(&vecCount)
+		if vecCount != 1 {
+			t.Fatalf("expected 1 vec_embedding, got %d", vecCount)
+		}
+	}
+	if s.FTSAvailable() {
+		var ftsCount int
+		s.DB().QueryRow("SELECT COUNT(*) FROM chunks_fts WHERE source = 'src' AND file_path = 'a.go'").Scan(&ftsCount)
+		if ftsCount != 0 {
+			t.Fatal("chunks_fts for a.go not cleared")
+		}
+	}
+}
+
 func TestFTSMetadataColumnsAreIndexedAndSearchable(t *testing.T) {
 	s := openTestStore(t)
 	if !s.FTSAvailable() {

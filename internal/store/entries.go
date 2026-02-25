@@ -113,8 +113,14 @@ func (s *Store) GetEntriesByPath(source, filePath string) ([]Entry, error) {
 }
 
 func (s *Store) ClearSource(source string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	if s.vecAvailable {
-		if _, err := s.db.Exec(
+		if _, err := tx.Exec(
 			"DELETE FROM vec_embeddings WHERE rowid IN (SELECT id FROM embeddings WHERE source = ?)",
 			source,
 		); err != nil {
@@ -122,18 +128,18 @@ func (s *Store) ClearSource(source string) error {
 		}
 	}
 	if s.ftsAvailable {
-		if _, err := s.db.Exec("DELETE FROM chunks_fts WHERE source = ?", source); err != nil {
+		if _, err := tx.Exec("DELETE FROM chunks_fts WHERE source = ?", source); err != nil {
 			return fmt.Errorf("clear chunks_fts: %w", err)
 		}
 	}
-	if _, err := s.db.Exec("DELETE FROM embeddings WHERE source = ?", source); err != nil {
+	if _, err := tx.Exec("DELETE FROM embeddings WHERE source = ?", source); err != nil {
 		return fmt.Errorf("clear embeddings: %w", err)
 	}
-	if _, err := s.db.Exec("DELETE FROM embedding_files WHERE source = ?", source); err != nil {
+	if _, err := tx.Exec("DELETE FROM embedding_files WHERE source = ?", source); err != nil {
 		return fmt.Errorf("clear embedding_files: %w", err)
 	}
-	if _, err := s.db.Exec("DELETE FROM embedding_meta WHERE source = ?", source); err != nil {
+	if _, err := tx.Exec("DELETE FROM embedding_meta WHERE source = ?", source); err != nil {
 		return fmt.Errorf("clear embedding_meta: %w", err)
 	}
-	return nil
+	return tx.Commit()
 }

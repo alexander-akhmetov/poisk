@@ -18,10 +18,12 @@ import (
 const maxChunkBytes = 8000
 
 type langSpec struct {
-	language   *sitter.Language
-	topTypes   map[string]bool
-	name       string
-	extensions []string
+	language       *sitter.Language
+	topTypes       map[string]bool
+	containerTypes map[string]bool // recurse into these (classes, impl blocks)
+	innerTypes     map[string]bool // extract these from containers as individual chunks
+	name           string
+	extensions     []string
 }
 
 var languages = []langSpec{
@@ -43,10 +45,16 @@ var languages = []langSpec{
 		extensions: []string{".py"},
 		topTypes: map[string]bool{
 			"function_definition":  true,
-			"class_definition":     true,
 			"decorated_definition": true,
 			"assignment":           true,
 			"expression_statement": true,
+		},
+		containerTypes: map[string]bool{
+			"class_definition": true,
+		},
+		innerTypes: map[string]bool{
+			"function_definition":  true,
+			"decorated_definition": true,
 		},
 	},
 	{
@@ -57,12 +65,19 @@ var languages = []langSpec{
 			"function_item": true,
 			"struct_item":   true,
 			"enum_item":     true,
-			"impl_item":     true,
-			"trait_item":    true,
 			"const_item":    true,
 			"static_item":   true,
 			"type_item":     true,
 			"mod_item":      true,
+		},
+		containerTypes: map[string]bool{
+			"impl_item":  true,
+			"trait_item": true,
+		},
+		innerTypes: map[string]bool{
+			"function_item": true,
+			"const_item":    true,
+			"type_item":     true,
 		},
 	},
 	{
@@ -72,10 +87,15 @@ var languages = []langSpec{
 		topTypes: map[string]bool{
 			"function_declaration":           true,
 			"generator_function_declaration": true,
-			"class_declaration":              true,
 			"lexical_declaration":            true,
 			"variable_declaration":           true,
 			"export_statement":               true,
+		},
+		containerTypes: map[string]bool{
+			"class_declaration": true,
+		},
+		innerTypes: map[string]bool{
+			"method_definition": true,
 		},
 	},
 	{
@@ -85,13 +105,18 @@ var languages = []langSpec{
 		topTypes: map[string]bool{
 			"function_declaration":           true,
 			"generator_function_declaration": true,
-			"class_declaration":              true,
 			"lexical_declaration":            true,
 			"variable_declaration":           true,
 			"export_statement":               true,
 			"interface_declaration":          true,
 			"type_alias_declaration":         true,
 			"enum_declaration":               true,
+		},
+		containerTypes: map[string]bool{
+			"class_declaration": true,
+		},
+		innerTypes: map[string]bool{
+			"method_definition": true,
 		},
 	},
 	{
@@ -101,13 +126,18 @@ var languages = []langSpec{
 		topTypes: map[string]bool{
 			"function_declaration":           true,
 			"generator_function_declaration": true,
-			"class_declaration":              true,
 			"lexical_declaration":            true,
 			"variable_declaration":           true,
 			"export_statement":               true,
 			"interface_declaration":          true,
 			"type_alias_declaration":         true,
 			"enum_declaration":               true,
+		},
+		containerTypes: map[string]bool{
+			"class_declaration": true,
+		},
+		innerTypes: map[string]bool{
+			"method_definition": true,
 		},
 	},
 	{
@@ -191,6 +221,23 @@ func chunkTreeSitter(ext, content string) ([]Chunk, error) {
 		}
 
 		nodeType := child.Type()
+
+		// Handle decorated definitions that wrap containers (e.g. Python @decorator on a class)
+		if spec.name == "python" && nodeType == "decorated_definition" {
+			if isDecoratedContainer(child, spec) {
+				subChunks := extractContainerChunks(child, content, src, spec)
+				chunks = append(chunks, subChunks...)
+				continue
+			}
+		}
+
+		// Container types → recurse into methods/inner definitions
+		if spec.containerTypes[nodeType] {
+			subChunks := extractContainerChunks(child, content, src, spec)
+			chunks = append(chunks, subChunks...)
+			continue
+		}
+
 		if !spec.topTypes[nodeType] {
 			continue
 		}
@@ -204,7 +251,6 @@ func chunkTreeSitter(ext, content string) ([]Chunk, error) {
 		symbol := extractSymbol(child, src, spec.name)
 
 		if len(text) > maxChunkBytes {
-			// Split oversized nodes by children
 			subChunks := splitOversizedNode(child, content, src, spec.name)
 			chunks = append(chunks, subChunks...)
 		} else if len(strings.TrimSpace(text)) >= minChars {
@@ -220,6 +266,156 @@ func chunkTreeSitter(ext, content string) ([]Chunk, error) {
 	}
 
 	return chunks, nil
+}
+
+func isDecoratedContainer(node *sitter.Node, spec *langSpec) bool {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		if child != nil && spec.containerTypes[child.Type()] {
+			return true
+		}
+	}
+	return false
+}
+
+func extractContainerChunks(container *sitter.Node, content string, src []byte, spec *langSpec) []Chunk {
+	// Find the actual container node (may be wrapped in decorated_definition)
+	containerNode := container
+	if container.Type() == "decorated_definition" {
+		for i := 0; i < int(container.ChildCount()); i++ {
+			child := container.Child(i)
+			if child != nil && spec.containerTypes[child.Type()] {
+				containerNode = child
+				break
+			}
+		}
+	}
+
+	containerSymbol := extractSymbol(containerNode, src, spec.name)
+
+	// Find the body node
+	body := containerNode.ChildByFieldName("body")
+	if body == nil {
+		// Rust impl/trait: try "declaration_list" child
+		for i := 0; i < int(containerNode.ChildCount()); i++ {
+			child := containerNode.Child(i)
+			if child != nil && child.Type() == "declaration_list" {
+				body = child
+				break
+			}
+		}
+	}
+	if body == nil {
+		body = containerNode
+	}
+
+	var chunks []Chunk
+	var preamble strings.Builder
+	preambleStart := int(container.StartPoint().Row) + 1
+
+	// Include decorator lines in preamble (Python decorated classes)
+	if container.Type() == "decorated_definition" && containerNode != container {
+		preambleText := content[container.StartByte():containerNode.StartByte()]
+		preamble.WriteString(preambleText)
+	}
+
+	// Include container signature (everything before the body)
+	if body != containerNode {
+		sigText := content[containerNode.StartByte():body.StartByte()]
+		preamble.WriteString(sigText)
+	}
+
+	for i := 0; i < int(body.ChildCount()); i++ {
+		child := body.Child(i)
+		if child == nil {
+			continue
+		}
+
+		if spec.innerTypes[child.Type()] {
+			// Flush preamble before first inner chunk
+			if preamble.Len() > 0 {
+				text := strings.TrimSpace(preamble.String())
+				if len(text) >= minChars {
+					chunks = append(chunks, Chunk{
+						Text:      text,
+						StartLine: preambleStart,
+						EndLine:   int(child.StartPoint().Row),
+						Language:  spec.name,
+						Kind:      containerNode.Type(),
+						Symbol:    containerSymbol,
+					})
+				}
+				preamble.Reset()
+			}
+
+			innerText := content[child.StartByte():child.EndByte()]
+			innerSymbol := extractSymbol(child, src, spec.name)
+			qualifiedSymbol := containerSymbol + "." + innerSymbol
+
+			if len(innerText) > maxChunkBytes {
+				subChunks := splitOversizedNode(child, content, src, spec.name)
+				for j := range subChunks {
+					subChunks[j].Symbol = qualifiedSymbol
+				}
+				chunks = append(chunks, subChunks...)
+			} else if len(strings.TrimSpace(innerText)) >= minChars {
+				chunks = append(chunks, Chunk{
+					Text:      innerText,
+					StartLine: int(child.StartPoint().Row) + 1,
+					EndLine:   int(child.EndPoint().Row) + 1,
+					Language:  spec.name,
+					Kind:      child.Type(),
+					Symbol:    qualifiedSymbol,
+				})
+			}
+		} else {
+			// Accumulate non-inner children into preamble
+			childText := content[child.StartByte():child.EndByte()]
+			if len(strings.TrimSpace(childText)) > 0 {
+				preamble.WriteString(childText)
+				// Add gap to next sibling
+				if i < int(body.ChildCount())-1 {
+					next := body.Child(i + 1)
+					if next != nil {
+						gap := content[child.EndByte():next.StartByte()]
+						preamble.WriteString(gap)
+					}
+				}
+			}
+		}
+	}
+
+	// Flush remaining preamble (e.g. class with only fields, no methods)
+	if preamble.Len() > 0 {
+		text := strings.TrimSpace(preamble.String())
+		if len(text) >= minChars {
+			chunks = append(chunks, Chunk{
+				Text:      text,
+				StartLine: preambleStart,
+				EndLine:   int(container.EndPoint().Row) + 1,
+				Language:  spec.name,
+				Kind:      containerNode.Type(),
+				Symbol:    containerSymbol,
+			})
+		}
+	}
+
+	// If no chunks were extracted (e.g. empty class), emit the whole container
+	if len(chunks) == 0 {
+		text := content[container.StartByte():container.EndByte()]
+		if len(strings.TrimSpace(text)) >= minChars {
+			chunks = append(chunks, Chunk{
+				Text:      text,
+				StartLine: int(container.StartPoint().Row) + 1,
+				EndLine:   int(container.EndPoint().Row) + 1,
+				Language:  spec.name,
+				Kind:      containerNode.Type(),
+				Symbol:    containerSymbol,
+			})
+		}
+	}
+
+	return chunks
 }
 
 func splitOversizedNode(node *sitter.Node, content string, src []byte, lang string) []Chunk {
@@ -300,6 +496,20 @@ func splitOversizedNode(node *sitter.Node, content string, src []byte, lang stri
 func extractSymbol(node *sitter.Node, src []byte, lang string) string {
 	if nameNode := node.ChildByFieldName("name"); nameNode != nil {
 		return nameNode.Content(src)
+	}
+
+	// Rust impl/trait: the type being implemented is in the "type" field
+	if lang == "rust" && (node.Type() == "impl_item" || node.Type() == "trait_item") {
+		if typeNode := node.ChildByFieldName("type"); typeNode != nil {
+			return typeNode.Content(src)
+		}
+		// trait_item has "name" which we already checked, but fallback to looking for type_identifier
+		for i := 0; i < int(node.ChildCount()); i++ {
+			child := node.Child(i)
+			if child != nil && child.Type() == "type_identifier" {
+				return child.Content(src)
+			}
+		}
 	}
 
 	if symbol := findNameInDescendants(node, src, 3); symbol != "" {
