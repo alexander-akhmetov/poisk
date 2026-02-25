@@ -45,6 +45,25 @@ func (ix *Indexer) IndexAll(ctx context.Context) ([]FolderStats, error) {
 		}
 		allStats = append(allStats, stats)
 	}
+
+	// Prune sources no longer in config
+	dbSources, err := ix.store.AllSources()
+	if err != nil {
+		return allStats, fmt.Errorf("list sources: %w", err)
+	}
+	configured := make(map[string]bool, len(ix.cfg.Folders))
+	for _, f := range ix.cfg.Folders {
+		configured[f.Path] = true
+	}
+	for _, src := range dbSources {
+		if !configured[src] {
+			slog.Info("pruning removed folder", "source", src)
+			if err := ix.store.ClearSource(src); err != nil {
+				return allStats, fmt.Errorf("prune source %s: %w", src, err)
+			}
+		}
+	}
+
 	return allStats, nil
 }
 

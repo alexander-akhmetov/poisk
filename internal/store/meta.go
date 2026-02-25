@@ -20,6 +20,23 @@ func (s *Store) ModelChanged(source, model string, dimensions int) (bool, error)
 	return storedModel != model || storedDims != dimensions, nil
 }
 
+func (s *Store) AllSources() ([]string, error) {
+	rows, err := s.db.Query("SELECT source FROM embedding_meta")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var sources []string
+	for rows.Next() {
+		var src string
+		if err := rows.Scan(&src); err != nil {
+			return nil, err
+		}
+		sources = append(sources, src)
+	}
+	return sources, rows.Err()
+}
+
 func (s *Store) UpdateMeta(source, model string, dimensions int) error {
 	_, err := s.db.Exec(
 		`INSERT INTO embedding_meta (source, model, dimensions) VALUES (?, ?, ?)

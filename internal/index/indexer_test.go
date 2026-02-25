@@ -232,3 +232,70 @@ func TestIndexFolderRemovesOldDataWhenEmbeddingFails(t *testing.T) {
 		t.Fatalf("tracked mtime=%d, want previous successful mtime %d", tracked[filePath], t1.UnixNano())
 	}
 }
+
+func TestIndexAllPrunesRemovedFolders(t *testing.T) {
+	dir1, _ := filepath.EvalSymlinks(t.TempDir())
+	dir2, _ := filepath.EvalSymlinks(t.TempDir())
+
+	server := newTestEmbeddingServer(t, 3, 0)
+	defer server.Close()
+
+	cfg := config.DefaultConfig()
+	cfg.Embedding.BaseURL = server.URL
+	cfg.Embedding.Model = "test-embedding"
+	cfg.Embedding.Dimensions = 3
+	cfg.Embedding.BatchSize = 16
+	cfg.Index.MaxFileSizeKB = 1024
+	cfg.Folders = []config.FolderConfig{
+		{Path: dir1, Description: "folder1"},
+		{Path: dir2, Description: "folder2"},
+	}
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := store.Open(dbPath, cfg.Embedding.Dimensions)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	client := embed.NewClient(cfg.Embedding.BaseURL, "", cfg.Embedding.Model, cfg.Embedding.Dimensions, false)
+	indexer := NewIndexer(db, client, &cfg)
+
+	// Write files in both folders
+	t1 := time.Unix(1_700_000_000, 100)
+	writeFileWithMtime(t, filepath.Join(dir1, "a.txt"), "this line is long enough to be indexed as one chunk in folder one", t1)
+	writeFileWithMtime(t, filepath.Join(dir2, "b.txt"), "this line is long enough to be indexed as one chunk in folder two", t1)
+
+	if _, err := indexer.IndexAll(context.Background()); err != nil {
+		t.Fatalf("first IndexAll: %v", err)
+	}
+
+	count1, _ := db.Count(dir1)
+	count2, _ := db.Count(dir2)
+	if count1 == 0 || count2 == 0 {
+		t.Fatalf("expected chunks in both folders, got %d and %d", count1, count2)
+	}
+
+	// Remove dir2 from config
+	cfg.Folders = []config.FolderConfig{
+		{Path: dir1, Description: "folder1"},
+	}
+
+	if _, err := indexer.IndexAll(context.Background()); err != nil {
+		t.Fatalf("second IndexAll: %v", err)
+	}
+
+	count1, _ = db.Count(dir1)
+	count2, _ = db.Count(dir2)
+	if count1 == 0 {
+		t.Fatal("expected folder1 chunks to remain")
+	}
+	if count2 != 0 {
+		t.Fatalf("expected folder2 chunks pruned, got %d", count2)
+	}
+
+	// Verify meta is cleared too
+	changed, _ := db.ModelChanged(dir2, "test-embedding", 3)
+	if !changed {
+		t.Fatal("expected meta cleared for pruned folder")
+	}
+}

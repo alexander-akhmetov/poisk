@@ -178,6 +178,41 @@ func TestClearSource(t *testing.T) {
 	}
 }
 
+func TestAllSources(t *testing.T) {
+	s := openTestStore(t)
+
+	sources, err := s.AllSources()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != 0 {
+		t.Fatalf("expected 0 sources, got %d", len(sources))
+	}
+
+	if err := s.UpdateMeta("src", "model", 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateMeta("docs", "model", 3); err != nil {
+		t.Fatal(err)
+	}
+
+	sources, err = s.AllSources()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != 2 {
+		t.Fatalf("expected 2 sources, got %d", len(sources))
+	}
+
+	got := make(map[string]bool)
+	for _, src := range sources {
+		got[src] = true
+	}
+	if !got["src"] || !got["docs"] {
+		t.Fatalf("unexpected sources: %v", sources)
+	}
+}
+
 func TestGetEntriesByPath(t *testing.T) {
 	s := openTestStore(t)
 
