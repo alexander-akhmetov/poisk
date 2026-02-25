@@ -1,0 +1,14 @@
+{
+  "name": "poisk",
+  "owner": {
+    "name": "alexander-akhmetov"
+  },
+  "plugins": [
+    {
+      "name": "poisk",
+      "source": ".",
+      "description": "Hybrid semantic + keyword search over source code and documents via MCP",
+      "version": "1.0.0"
+    }
+  ]
+}
