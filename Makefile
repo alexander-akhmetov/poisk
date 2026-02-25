@@ -1,4 +1,4 @@
-.PHONY: all build test test-race lint fmt install clean
+.PHONY: all build test test-race eval-test lint fmt install clean
 
 TAGS := fts5
 
@@ -12,6 +12,9 @@ test:
 
 test-race:
 	go test -tags $(TAGS) -race -timeout 5m ./...
+
+eval-test:
+	go test -tags '$(TAGS) eval' -timeout 5m -v -run TestEval ./internal/search/
 
 lint:
 	golangci-lint run

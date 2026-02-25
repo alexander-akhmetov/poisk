@@ -29,7 +29,7 @@
   },
   {
     "query": "MCP server search tool handler",
-    "relevant_files": ["internal/mcp/server.go"]
+    "relevant_files": ["internal/mcp/search_handler.go"]
   },
   {
     "query": "indexer folder incremental mtime tracking",
@@ -73,7 +73,7 @@
   },
   {
     "query": "reindex force clear source",
-    "relevant_files": ["internal/mcp/server.go"]
+    "relevant_files": ["internal/mcp/reindex_handler.go"]
   },
   {
     "query": "schema version migration drop recreate",
