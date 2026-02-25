@@ -87,6 +87,8 @@ claude plugin marketplace add alexander-akhmetov/poisk
 claude plugin install poisk
 ```
 
+The plugin installs a skill that teaches Claude how to use the poisk CLI. To actually trigger it, you can either ask Claude directly (e.g. "use poisk to search for ...") or create your own skills that invoke poisk for specific workflows — for example, a skill that searches your notes folder whenever you ask a question about a topic.
+
 ### Query syntax
 
 By default queries use hybrid search (semantic + keyword). You can control this:
