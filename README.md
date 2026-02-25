@@ -21,7 +21,7 @@ At query time, both results are merged with Reciprocal Rank Fusion — so you ge
 
 ## Install
 
-Requires Go 1.21+ and CGO (for sqlite3 + sqlite-vec).
+Requires Go 1.26+ and CGO (for sqlite3 + sqlite-vec).
 
 ```bash
 go install -tags fts5 github.com/akhmetov/poisk/cmd/poisk@latest
