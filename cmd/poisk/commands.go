@@ -11,42 +11,23 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/akhmetov/poisk/internal/config"
-	"github.com/akhmetov/poisk/internal/embed"
-	"github.com/akhmetov/poisk/internal/index"
-	"github.com/akhmetov/poisk/internal/llm"
+	"github.com/akhmetov/poisk/internal/domain"
 	mcpserver "github.com/akhmetov/poisk/internal/mcp"
-	"github.com/akhmetov/poisk/internal/search"
-	"github.com/akhmetov/poisk/internal/store"
 )
 
 func cmdServe() error {
-	cfg, err := config.Load()
+	d, err := bootstrap()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
-
-	db, err := store.Open(config.DBPath(), cfg.Embedding.Dimensions)
-	if err != nil {
-		return fmt.Errorf("open database: %w", err)
-	}
-	defer db.Close()
-
-	client := embed.NewClient(cfg.Embedding.BaseURL, cfg.Embedding.APIKey, cfg.Embedding.Model, cfg.Embedding.Dimensions, cfg.Embedding.SendDimensions)
-	indexer := index.NewIndexer(db, client, cfg)
-
-	var llmClient *llm.Client
-	if cfg.LLM.BaseURL != "" {
-		llmClient = llm.NewClient(cfg.LLM.BaseURL, cfg.LLM.APIKey, cfg.LLM.Model)
-	}
-	searcher := search.NewSearcher(db, client, cfg, llmClient)
+	defer d.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	slog.Info("starting MCP server", "transport", "stdio", "folders", len(cfg.Folders))
+	slog.Info("starting MCP server", "transport", "stdio", "folders", len(d.Cfg.Folders))
 
-	if err := mcpserver.Run(ctx, indexer, searcher, db, cfg); err != nil {
+	if err := mcpserver.Run(ctx, d.IndexSvc, d.SearchSvc, d.DocumentSvc, d.StatusSvc); err != nil {
 		return fmt.Errorf("mcp server: %w", err)
 	}
 	return nil
@@ -72,29 +53,21 @@ func cmdIndex() error {
 		}
 	}
 
-	cfg, err := config.Load()
+	d, err := bootstrap()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
-
-	db, err := store.Open(config.DBPath(), cfg.Embedding.Dimensions)
-	if err != nil {
-		return fmt.Errorf("open database: %w", err)
-	}
-	defer db.Close()
-
-	client := embed.NewClient(cfg.Embedding.BaseURL, cfg.Embedding.APIKey, cfg.Embedding.Model, cfg.Embedding.Dimensions, cfg.Embedding.SendDimensions)
-	indexer := index.NewIndexer(db, client, cfg)
+	defer d.Close()
 
 	if !watch {
-		return indexOnce(indexer)
+		return indexOnce(d)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	slog.Info("watch mode started", "interval", interval)
-	if err := indexOnce(indexer); err != nil {
+	if err := indexOnce(d); err != nil {
 		return err
 	}
 
@@ -106,15 +79,15 @@ func cmdIndex() error {
 			slog.Info("watch mode stopped")
 			return nil
 		case <-ticker.C:
-			if err := indexOnce(indexer); err != nil {
+			if err := indexOnce(d); err != nil {
 				slog.Error("indexing cycle failed", "error", err)
 			}
 		}
 	}
 }
 
-func indexOnce(indexer *index.Indexer) error {
-	stats, err := indexer.IndexAll(context.Background())
+func indexOnce(d *deps) error {
+	stats, err := d.IndexSvc.IndexAll(context.Background())
 	if err != nil {
 		return fmt.Errorf("indexing: %w", err)
 	}
@@ -163,31 +136,18 @@ func cmdRun() error {
 		return fmt.Errorf("usage: poisk run <query> [--top-k N] [--folders dir1,dir2]")
 	}
 
-	cfg, err := config.Load()
+	d, err := bootstrap()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
-
-	db, err := store.Open(config.DBPath(), cfg.Embedding.Dimensions)
-	if err != nil {
-		return fmt.Errorf("open database: %w", err)
-	}
-	defer db.Close()
-
-	client := embed.NewClient(cfg.Embedding.BaseURL, cfg.Embedding.APIKey, cfg.Embedding.Model, cfg.Embedding.Dimensions, cfg.Embedding.SendDimensions)
-
-	var llmCli *llm.Client
-	if cfg.LLM.BaseURL != "" {
-		llmCli = llm.NewClient(cfg.LLM.BaseURL, cfg.LLM.APIKey, cfg.LLM.Model)
-	}
-	searcher := search.NewSearcher(db, client, cfg, llmCli)
+	defer d.Close()
 
 	if topK <= 0 {
-		topK = cfg.Search.DefaultTopK
+		topK = d.Cfg.Search.DefaultTopK
 	}
 
 	ctx := context.Background()
-	results, err := searcher.Search(ctx, query, topK, folders)
+	results, err := d.SearchSvc.Search(ctx, query, topK, folders)
 	if err != nil && len(results) == 0 {
 		return fmt.Errorf("search: %w", err)
 	}
@@ -201,64 +161,62 @@ func cmdRun() error {
 	}
 
 	for _, r := range results {
-		loc := fmt.Sprintf("%s:%d", r.FilePath, r.LineNum)
-		if r.EndLine > 0 && r.EndLine != r.LineNum {
-			loc = fmt.Sprintf("%s:%d-%d", r.FilePath, r.LineNum, r.EndLine)
-		}
-		meta := ""
-		if r.Symbol != "" {
-			meta = fmt.Sprintf(" [%s]", r.Symbol)
-		}
-		ctxStr := ""
-		if len(r.Context) > 0 {
-			ctxStr = fmt.Sprintf(" (%s)", strings.Join(r.Context, " > "))
-		}
-		fmt.Printf("[%.2f] %s%s%s\n%s\n\n", r.Score, loc, meta, ctxStr, r.Text)
+		printResult(r)
 	}
 	return nil
 }
 
+func printResult(r domain.SearchResult) {
+	loc := fmt.Sprintf("%s:%d", r.FilePath, r.LineNum)
+	if r.EndLine > 0 && r.EndLine != r.LineNum {
+		loc = fmt.Sprintf("%s:%d-%d", r.FilePath, r.LineNum, r.EndLine)
+	}
+	meta := ""
+	if r.Symbol != "" {
+		meta = fmt.Sprintf(" [%s]", r.Symbol)
+	}
+	ctxStr := ""
+	if len(r.Context) > 0 {
+		ctxStr = fmt.Sprintf(" (%s)", strings.Join(r.Context, " > "))
+	}
+	fmt.Printf("[%.2f] %s%s%s\n%s\n\n", r.Score, loc, meta, ctxStr, r.Text)
+}
+
 func cmdStatus() error {
-	cfg, err := config.Load()
+	d, err := bootstrap()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
+	defer d.Close()
 
-	db, err := store.Open(config.DBPath(), cfg.Embedding.Dimensions)
-	if err != nil {
-		return fmt.Errorf("open database: %w", err)
-	}
-	defer db.Close()
+	status := d.StatusSvc.GetStatus()
 
-	status := struct {
-		Folders      []FolderStatus `json:"folders"`
-		VecAvailable bool           `json:"vec_available"`
-		FTSAvailable bool           `json:"fts_available"`
+	output := struct {
+		Folders      []FolderStatusJSON `json:"folders"`
+		VecAvailable bool               `json:"vec_available"`
+		FTSAvailable bool               `json:"fts_available"`
 	}{
-		VecAvailable: db.VecAvailable(),
-		FTSAvailable: db.FTSAvailable(),
+		VecAvailable: status.VecAvailable,
+		FTSAvailable: status.FTSAvailable,
 	}
-
-	for _, f := range cfg.Folders {
-		count, _ := db.Count(f.Path)
-		fileCount, _ := db.TrackedFileCount(f.Path)
-		status.Folders = append(status.Folders, FolderStatus{
+	for _, f := range status.Folders {
+		output.Folders = append(output.Folders, FolderStatusJSON{
 			Path:        f.Path,
 			Description: f.Description,
-			Files:       fileCount,
-			Chunks:      count,
+			Files:       f.Files,
+			Chunks:      f.Chunks,
 		})
 	}
 
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	return enc.Encode(status)
+	return enc.Encode(output)
 }
 
-type FolderStatus struct {
+// FolderStatusJSON is the JSON representation of folder status in CLI output.
+type FolderStatusJSON struct {
 	Path        string `json:"path"`
 	Description string `json:"description"`
 	Files       int    `json:"files"`
 	Chunks      int    `json:"chunks"`
 }
-
