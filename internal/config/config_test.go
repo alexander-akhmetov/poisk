@@ -2,6 +2,8 @@ package config
 
 import (
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -100,4 +102,198 @@ func TestValidateRejectsInvalidFusionWeights(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestExpandHome(t *testing.T) {
+	home := "/home/testuser"
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{"tilde only", "~", "/home/testuser"},
+		{"tilde prefix", "~/projects", "/home/testuser/projects"},
+		{"absolute", "/usr/local", "/usr/local"},
+		{"relative", "relative/path", "relative/path"},
+		{"tilde other user", "~other/path", "~other/path"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := expandHome(tt.path, home)
+			if got != tt.want {
+				t.Errorf("expandHome(%q, %q) = %q, want %q", tt.path, home, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConfigPath(t *testing.T) {
+	t.Run("XDG_CONFIG_HOME set", func(t *testing.T) {
+		tmp := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", tmp)
+		got := configPath()
+		want := filepath.Join(tmp, "poisk", "config.toml")
+		if got != want {
+			t.Errorf("configPath() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("XDG_CONFIG_HOME unset", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", "")
+		got := configPath()
+		if !strings.HasSuffix(got, filepath.Join(".config", "poisk", "config.toml")) {
+			t.Errorf("configPath() = %q, expected suffix .config/poisk/config.toml", got)
+		}
+	})
+}
+
+func TestDBPath(t *testing.T) {
+	t.Run("XDG_DATA_HOME set", func(t *testing.T) {
+		tmp := t.TempDir()
+		t.Setenv("XDG_DATA_HOME", tmp)
+		got := DBPath()
+		want := filepath.Join(tmp, "poisk", "poisk.db")
+		if got != want {
+			t.Errorf("DBPath() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("XDG_DATA_HOME unset", func(t *testing.T) {
+		t.Setenv("XDG_DATA_HOME", "")
+		got := DBPath()
+		if !strings.HasSuffix(got, filepath.Join(".local", "share", "poisk", "poisk.db")) {
+			t.Errorf("DBPath() = %q, expected suffix .local/share/poisk/poisk.db", got)
+		}
+	})
+}
+
+func TestLoad(t *testing.T) {
+	t.Run("missing file returns defaults", func(t *testing.T) {
+		tmp := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", tmp)
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		def := DefaultConfig()
+		if cfg.Embedding.Model != def.Embedding.Model {
+			t.Errorf("model = %q, want default %q", cfg.Embedding.Model, def.Embedding.Model)
+		}
+	})
+
+	t.Run("valid TOML", func(t *testing.T) {
+		tmp := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", tmp)
+
+		dir := filepath.Join(tmp, "poisk")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		content := `
+[embedding]
+base_url = "http://localhost:9999"
+model = "custom-model"
+dimensions = 128
+batch_size = 10
+
+[[folders]]
+path = "/tmp/test"
+description = "test folder"
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.Embedding.Model != "custom-model" {
+			t.Errorf("model = %q, want %q", cfg.Embedding.Model, "custom-model")
+		}
+		if cfg.Embedding.Dimensions != 128 {
+			t.Errorf("dimensions = %d, want 128", cfg.Embedding.Dimensions)
+		}
+		if len(cfg.Folders) != 1 || cfg.Folders[0].Path != "/tmp/test" {
+			t.Errorf("folders = %v, want [{/tmp/test}]", cfg.Folders)
+		}
+	})
+
+	t.Run("invalid TOML", func(t *testing.T) {
+		tmp := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", tmp)
+
+		dir := filepath.Join(tmp, "poisk")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("{{invalid toml"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := Load()
+		if err == nil {
+			t.Fatal("expected parse error")
+		}
+		if !strings.Contains(err.Error(), "parse config") {
+			t.Errorf("error = %q, want 'parse config' substring", err.Error())
+		}
+	})
+
+	t.Run("validation failure", func(t *testing.T) {
+		tmp := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", tmp)
+
+		dir := filepath.Join(tmp, "poisk")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		content := `
+[embedding]
+dimensions = 0
+batch_size = 10
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := Load()
+		if err == nil {
+			t.Fatal("expected validation error")
+		}
+		if !strings.Contains(err.Error(), "config validation") {
+			t.Errorf("error = %q, want 'config validation' substring", err.Error())
+		}
+	})
+
+	t.Run("tilde expansion in folder paths", func(t *testing.T) {
+		tmp := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", tmp)
+
+		dir := filepath.Join(tmp, "poisk")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		content := `
+[[folders]]
+path = "~/projects/test"
+description = "test"
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.Folders) == 0 {
+			t.Fatal("expected at least one folder")
+		}
+		if strings.HasPrefix(cfg.Folders[0].Path, "~") {
+			t.Errorf("tilde not expanded: %q", cfg.Folders[0].Path)
+		}
+	})
 }

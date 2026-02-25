@@ -31,6 +31,7 @@ func TestParseScores(t *testing.T) {
 		{"numeric with trailing scale text", "8 3 7 out of 10", 3, []float64{8, 3, 7}},
 		{"numeric first score equals expected", "3 8 7 out of 10", 3, []float64{3, 8, 7}},
 		{"numeric with range preamble", "Scores (0-10): 8 3 7", 3, []float64{8, 3, 7}},
+		{"numeric indexed pairs", "1 8 2 7 3 6", 3, []float64{8, 7, 6}},
 		{"single score natural language", "1 out of 10", 1, []float64{1}},
 		{"single score bare value", "1", 1, []float64{1}},
 		{"bare ranking indexes are rejected", "1 2 3", 3, nil},

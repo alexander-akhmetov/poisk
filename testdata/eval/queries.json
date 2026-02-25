@@ -118,5 +118,25 @@
   {
     "query": "entry source filepath linenum embedding folder",
     "relevant_files": ["internal/store/entries.go"]
+  },
+  {
+    "query": "lex:query builder strict AND relaxed OR prefix tokenize",
+    "relevant_files": ["internal/search/fts.go"]
+  },
+  {
+    "query": "vec:reciprocal rank fusion weighted merge results",
+    "relevant_files": ["internal/search/merge.go"]
+  },
+  {
+    "query": "lex:search failed vec failed no FTS results | vec:all search backends failed",
+    "relevant_files": ["internal/search/search.go"]
+  },
+  {
+    "query": "vec:parse scores numeric fallback ordinal prefix indexed pairs",
+    "relevant_files": ["internal/search/rerank.go"]
+  },
+  {
+    "query": "lex:--top-k --folders usage poisk run",
+    "relevant_files": ["cmd/poisk/commands.go"]
   }
 ]
