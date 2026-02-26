@@ -39,11 +39,16 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
 
+      - name: Package binary
+        run: |
+          cd dist/poisk_*/
+          tar czf ../../poisk_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz poisk
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/
+          name: poisk_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: poisk_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz
 
   release:
     needs: build
@@ -59,11 +64,8 @@ jobs:
           path: artifacts/
           merge-multiple: true
 
-      - name: List artifacts
-        run: find artifacts/ -type f | head -50
-
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: artifacts/*.tar.gz
           generate_release_notes: true
