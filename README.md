@@ -4,21 +4,6 @@ Hybrid semantic + keyword search over local files and codebases via CLI and [MCP
 
 Indexes source code and markdown files with embeddings into SQLite ([sqlite-vec](https://github.com/asg017/sqlite-vec) + FTS5) and exposes search through a CLI and MCP server that any compatible client (Claude Code, etc.) can use.
 
-## Features
-
-- **Hybrid search** — combines vector similarity (vec0 KNN) with keyword relevance (FTS5 BM25), merged via Reciprocal Rank Fusion
-- **Code-aware FTS** — tokenizer splits camelCase/snake_case, staged retrieval (strict AND → relaxed OR → prefix OR)
-- **Tree-sitter chunking** — AST-based code chunking for Go, Python, Rust, JavaScript, TypeScript (with JSX/TSX)
-- **Markdown chunking** — heading-aware sections with breadcrumb paths, fence-aware splitting
-- **Incremental indexing** — tracks file mtimes, only re-embeds changed files
-- **Multiple folders** — index and search across multiple configured directories
-
-## How it works
-
-poisk stores everything in a local SQLite database (`~/.local/share/poisk/poisk.db`). During indexing, source code files are parsed with [tree-sitter](https://tree-sitter.github.io/) into AST-aware chunks (functions, structs, etc.), markdown files are split by headings into sections, and each chunk is embedded via any OpenAI-compatible API (Ollama by default). The embeddings go into [sqlite-vec](https://github.com/asg017/sqlite-vec) for vector search, and the raw text goes into FTS5 for keyword search.
-
-At query time, both results are merged with Reciprocal Rank Fusion — so you get semantic understanding and exact keyword matches in one search. Indexing is incremental: only changed files (by mtime) are re-processed.
-
 ## Install with Claude Code
 
 The easiest way to get started is with the [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin. It installs a skill that teaches Claude how to use poisk and helps you set everything up.
@@ -37,6 +22,23 @@ Claude will help you install the `poisk` binary, create the config file, set up 
 **3. Use it:**
 
 Ask Claude to search with poisk (e.g. *"use poisk to search for authentication middleware"*), or create custom skills that invoke poisk for specific workflows — for example, a skill that searches your notes folder whenever you ask a question about a topic. See the [configuration reference](skills/setup/SKILL.md) for examples of custom skills.
+
+## How it works
+
+poisk stores everything in a local SQLite database (`~/.local/share/poisk/poisk.db`). During indexing, source code files are parsed with [tree-sitter](https://tree-sitter.github.io/) into AST-aware chunks (functions, structs, etc.), markdown files are split by headings into sections, and each chunk is embedded via any OpenAI-compatible API (Ollama by default). The embeddings go into [sqlite-vec](https://github.com/asg017/sqlite-vec) for vector search, and the raw text goes into FTS5 for keyword search.
+
+At query time, both results are merged with Reciprocal Rank Fusion — so you get semantic understanding and exact keyword matches in one search. Indexing is incremental: only changed files (by mtime) are re-processed.
+
+
+
+## Features
+
+- **Hybrid search** — combines vector similarity (vec0 KNN) with keyword relevance (FTS5 BM25), merged via Reciprocal Rank Fusion
+- **Code-aware FTS** — tokenizer splits camelCase/snake_case, staged retrieval (strict AND → relaxed OR → prefix OR)
+- **Tree-sitter chunking** — AST-based code chunking for Go, Python, Rust, JavaScript, TypeScript (with JSX/TSX)
+- **Markdown chunking** — heading-aware sections with breadcrumb paths, fence-aware splitting
+- **Incremental indexing** — tracks file mtimes, only re-embeds changed files
+- **Multiple folders** — index and search across multiple configured directories
 
 ## Manual install
 
