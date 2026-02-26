@@ -225,7 +225,7 @@ func TestChunkSession_MinLengthFiltering(t *testing.T) {
 
 func TestChunkSession_LargeTurnSplit(t *testing.T) {
 	// Build a large assistant response that exceeds maxSessionChunkChars.
-	var paragraphs []string
+	paragraphs := make([]string, 0, 20)
 	for range 20 {
 		paragraphs = append(paragraphs, strings.Repeat("This is paragraph content that fills space. ", 10))
 	}

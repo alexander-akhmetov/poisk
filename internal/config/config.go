@@ -185,32 +185,46 @@ func (c *Config) validate() error {
 	if c.Search.SimilarityThreshold < 0 || c.Search.SimilarityThreshold > 1 {
 		return fmt.Errorf("search.similarity_threshold must be between 0 and 1, got %v", c.Search.SimilarityThreshold)
 	}
-	if c.Search.VecWeight <= 0 || math.IsNaN(c.Search.VecWeight) || math.IsInf(c.Search.VecWeight, 0) {
-		return fmt.Errorf("search.vec_weight must be > 0, got %v", c.Search.VecWeight)
+	if err := validatePositiveFloat(c.Search.VecWeight, "search.vec_weight"); err != nil {
+		return err
 	}
-	if c.Search.FTSWeight <= 0 || math.IsNaN(c.Search.FTSWeight) || math.IsInf(c.Search.FTSWeight, 0) {
-		return fmt.Errorf("search.fts_weight must be > 0, got %v", c.Search.FTSWeight)
+	if err := validatePositiveFloat(c.Search.FTSWeight, "search.fts_weight"); err != nil {
+		return err
 	}
-	if c.Search.OriginalQueryWeight <= 0 || math.IsNaN(c.Search.OriginalQueryWeight) || math.IsInf(c.Search.OriginalQueryWeight, 0) {
-		return fmt.Errorf("search.original_query_weight must be > 0, got %v", c.Search.OriginalQueryWeight)
+	if err := validatePositiveFloat(c.Search.OriginalQueryWeight, "search.original_query_weight"); err != nil {
+		return err
 	}
-	if c.Search.ExpandedQueryWeight <= 0 || math.IsNaN(c.Search.ExpandedQueryWeight) || math.IsInf(c.Search.ExpandedQueryWeight, 0) {
-		return fmt.Errorf("search.expanded_query_weight must be > 0, got %v", c.Search.ExpandedQueryWeight)
+	if err := validatePositiveFloat(c.Search.ExpandedQueryWeight, "search.expanded_query_weight"); err != nil {
+		return err
 	}
 	if c.Search.RerankTopN <= 0 {
 		return fmt.Errorf("search.rerank_top_n must be > 0, got %v", c.Search.RerankTopN)
 	}
-	if math.IsNaN(c.Search.RerankTopWeight) || math.IsInf(c.Search.RerankTopWeight, 0) || c.Search.RerankTopWeight < 0 || c.Search.RerankTopWeight > 1 {
-		return fmt.Errorf("search.rerank_retrieval_weight_top must be between 0 and 1, got %v", c.Search.RerankTopWeight)
+	if err := validateWeight(c.Search.RerankTopWeight, "search.rerank_retrieval_weight_top"); err != nil {
+		return err
 	}
-	if math.IsNaN(c.Search.RerankBottomWeight) || math.IsInf(c.Search.RerankBottomWeight, 0) || c.Search.RerankBottomWeight < 0 || c.Search.RerankBottomWeight > 1 {
-		return fmt.Errorf("search.rerank_retrieval_weight_bottom must be between 0 and 1, got %v", c.Search.RerankBottomWeight)
+	if err := validateWeight(c.Search.RerankBottomWeight, "search.rerank_retrieval_weight_bottom"); err != nil {
+		return err
 	}
 	if c.Search.RerankTopWeight < c.Search.RerankBottomWeight {
 		return fmt.Errorf("search.rerank_retrieval_weight_top must be >= search.rerank_retrieval_weight_bottom, got %v < %v", c.Search.RerankTopWeight, c.Search.RerankBottomWeight)
 	}
 	if c.Search.MinScore < 0 || math.IsNaN(c.Search.MinScore) || math.IsInf(c.Search.MinScore, 0) {
 		return fmt.Errorf("search.min_score must be >= 0, got %v", c.Search.MinScore)
+	}
+	return nil
+}
+
+func validatePositiveFloat(v float64, name string) error {
+	if v <= 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+		return fmt.Errorf("%s must be > 0, got %v", name, v)
+	}
+	return nil
+}
+
+func validateWeight(v float64, name string) error {
+	if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > 1 {
+		return fmt.Errorf("%s must be between 0 and 1, got %v", name, v)
 	}
 	return nil
 }
