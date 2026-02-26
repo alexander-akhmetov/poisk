@@ -58,7 +58,7 @@ make build
 
 ### Configuration
 
-poisk needs an OpenAI-compatible embedding API. By default it uses [Ollama](https://ollama.com/) with `nomic-embed-text` at `localhost:11434`.
+poisk needs an OpenAI-compatible embedding API. By default it uses [Ollama](https://ollama.com/) with [`qwen3-embedding:4b`](https://ollama.com/library/qwen3-embedding:4b) at `localhost:11434`.
 
 Create `~/.config/poisk/config.toml`. Only `[[folders]]` is required — everything else has sensible defaults:
 

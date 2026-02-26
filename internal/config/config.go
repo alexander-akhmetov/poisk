@@ -92,10 +92,11 @@ func (f *FolderConfig) EffectiveIncludePatterns(global []string) []string {
 func DefaultConfig() Config {
 	return Config{
 		Embedding: EmbeddingConfig{
-			BaseURL:    "http://localhost:11434/v1",
-			Model:      "nomic-embed-text",
-			Dimensions: 768,
-			BatchSize:  50,
+			BaseURL:        "http://localhost:11434/v1",
+			Model:          "qwen3-embedding:4b",
+			Dimensions:     1024,
+			BatchSize:      50,
+			SendDimensions: true,
 		},
 		Search: SearchConfig{
 			RRFk:                60,

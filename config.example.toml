@@ -5,9 +5,10 @@
 # Any OpenAI-compatible embedding API (Ollama, LM Studio, OpenAI, etc.)
 base_url = "http://localhost:11434/v1"
 api_key = ""
-model = "nomic-embed-text"
-dimensions = 768
+model = "qwen3-embedding:4b"
+dimensions = 1024
 batch_size = 50
+send_dimensions = true
 
 [search]
 # Reciprocal Rank Fusion constant (higher = more weight to top-ranked results)

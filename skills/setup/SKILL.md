@@ -27,16 +27,24 @@ make build
 ### Setup steps
 
 1. **Install the binary** (see above)
-2. **Create the config** at `~/.config/poisk/config.toml` — ask the user which folders to index. Minimal config:
+2. **Set up an embedding provider** — poisk needs an OpenAI-compatible embedding API to generate vectors. Ask the user which option they prefer:
+   - **Ollama (default, free, local)** — install [Ollama](https://ollama.com/), then pull the model:
+     ```bash
+     ollama pull qwen3-embedding:4b    # 2.5 GB, recommended default
+     # or for lower resource usage:
+     ollama pull qwen3-embedding:0.6b  # 639 MB, lighter alternative
+     ```
+     No API key needed. The default config points at Ollama's local endpoint (`http://localhost:11434/v1`).
+   - **OpenAI** — use OpenAI's embedding API. Requires an API key. Set `base_url`, `api_key`, `model`, and `dimensions` in the `[embedding]` section (see below).
+   - **Any OpenAI-compatible API** — LM Studio, vLLM, etc. — just point `base_url` at the endpoint.
+3. **Create the config** at `~/.config/poisk/config.toml` — ask the user which folders to index. Minimal config (works with Ollama defaults):
    ```toml
    [[folders]]
    path = "~/projects/myapp"
    description = "My application"
    ```
-3. **Run initial index**: `poisk index`
-4. **Verify**: `poisk status`
-
-By default poisk uses Ollama with `nomic-embed-text` for embeddings. If Ollama is not installed, help the user set up an alternative embedding provider (OpenAI, etc.) — see `[embedding]` section below.
+4. **Run initial index**: `poisk index`
+5. **Verify**: `poisk status`
 
 ## Configuration
 
@@ -48,16 +56,16 @@ Only `[[folders]]` is required — everything else has sensible defaults.
 
 ### `[embedding]`
 
-Any OpenAI-compatible embedding API. Defaults to local Ollama.
+Any OpenAI-compatible embedding API. Defaults to local Ollama with `qwen3-embedding:4b`.
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `base_url` | `http://localhost:11434/v1` | API endpoint |
 | `api_key` | `""` | API key (empty for local Ollama) |
-| `model` | `nomic-embed-text` | Embedding model name |
-| `dimensions` | `768` | Embedding vector dimensions |
+| `model` | `qwen3-embedding:4b` | Embedding model name |
+| `dimensions` | `1024` | Embedding vector dimensions (qwen3-embedding supports 32–4096) |
 | `batch_size` | `50` | Chunks per embedding request |
-| `send_dimensions` | `false` | Include dimensions parameter in API requests (needed by some providers) |
+| `send_dimensions` | `true` | Include dimensions parameter in API requests |
 
 Example with OpenAI:
 
@@ -145,9 +153,10 @@ include_patterns = ["*.md", "*.txt", "*.org"]
 ```toml
 [embedding]
 base_url = "http://localhost:11434/v1"
-model = "nomic-embed-text"
-dimensions = 768
+model = "qwen3-embedding:4b"
+dimensions = 1024
 batch_size = 50
+send_dimensions = true
 
 [search]
 default_top_k = 20
@@ -213,9 +222,10 @@ poisk run "<query>" --folders ~/projects/myapp --top-k 10 2>/dev/null
 ## CLI commands
 
 ```bash
-poisk index             # Index all configured folders
-poisk index --force     # Force full re-index (ignore mtimes)
-poisk run "<query>"     # Search
-poisk status            # Show index status
-poisk serve             # Start MCP server (stdio)
+poisk index                      # Index all configured folders (incremental, skips unchanged files)
+poisk index --watch              # Keep running and re-index periodically (default every 5m)
+poisk index --watch --interval 2m  # Custom watch interval
+poisk run "<query>"              # Search
+poisk status                     # Show index status
+poisk serve                      # Start MCP server (stdio)
 ```
