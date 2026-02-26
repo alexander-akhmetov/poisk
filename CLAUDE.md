@@ -10,3 +10,5 @@ make test     # runs all tests
 ```
 
 The `-tags fts5` build tag is required for FTS5 support in go-sqlite3.
+
+@README.md
