@@ -268,6 +268,75 @@ batch_size = 10
 		}
 	})
 
+	t.Run("folder-level pattern overrides", func(t *testing.T) {
+		tmp := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", tmp)
+
+		dir := filepath.Join(tmp, "poisk")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		content := `
+[index]
+exclude_patterns = [".git", "node_modules"]
+include_patterns = ["*.go", "*.md"]
+
+[[folders]]
+path = "/tmp/with-overrides"
+description = "overrides both"
+exclude_patterns = ["vendor"]
+include_patterns = ["*.rs"]
+
+[[folders]]
+path = "/tmp/no-overrides"
+description = "uses globals"
+
+[[folders]]
+path = "/tmp/empty-overrides"
+description = "explicitly empty"
+exclude_patterns = []
+include_patterns = []
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		globalExclude := cfg.Index.ExcludePatterns
+		globalInclude := cfg.Index.IncludePatterns
+
+		// Folder with overrides uses its own patterns
+		f0 := cfg.Folders[0]
+		if got := f0.EffectiveExcludePatterns(globalExclude); len(got) != 1 || got[0] != "vendor" {
+			t.Errorf("folder[0] exclude = %v, want [vendor]", got)
+		}
+		if got := f0.EffectiveIncludePatterns(globalInclude); len(got) != 1 || got[0] != "*.rs" {
+			t.Errorf("folder[0] include = %v, want [*.rs]", got)
+		}
+
+		// Folder without overrides falls back to global
+		f1 := cfg.Folders[1]
+		if got := f1.EffectiveExcludePatterns(globalExclude); len(got) != 2 {
+			t.Errorf("folder[1] exclude = %v, want global %v", got, globalExclude)
+		}
+		if got := f1.EffectiveIncludePatterns(globalInclude); len(got) != 2 {
+			t.Errorf("folder[1] include = %v, want global %v", got, globalInclude)
+		}
+
+		// Folder with explicit empty overrides gets empty (not global)
+		f2 := cfg.Folders[2]
+		if got := f2.EffectiveExcludePatterns(globalExclude); len(got) != 0 {
+			t.Errorf("folder[2] exclude = %v, want empty", got)
+		}
+		if got := f2.EffectiveIncludePatterns(globalInclude); len(got) != 0 {
+			t.Errorf("folder[2] include = %v, want empty", got)
+		}
+	})
+
 	t.Run("tilde expansion in folder paths", func(t *testing.T) {
 		tmp := t.TempDir()
 		t.Setenv("XDG_CONFIG_HOME", tmp)

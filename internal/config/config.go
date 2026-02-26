@@ -60,13 +60,33 @@ type SearchConfig struct {
 
 type IndexConfig struct {
 	ExcludePatterns []string `toml:"exclude_patterns"`
+	IncludePatterns []string `toml:"include_patterns"`
 	MaxFileSizeKB   int      `toml:"max_file_size_kb"`
 }
 
 type FolderConfig struct {
-	Path        string            `toml:"path"`
-	Description string            `toml:"description"`
-	Context     map[string]string `toml:"context"`
+	Path            string            `toml:"path"`
+	Description     string            `toml:"description"`
+	Context         map[string]string `toml:"context"`
+	ExcludePatterns []string          `toml:"exclude_patterns"`
+	IncludePatterns []string          `toml:"include_patterns"`
+}
+
+// EffectiveExcludePatterns returns folder-level patterns if set, otherwise global.
+// nil = not configured (use global), empty slice = explicitly no excludes.
+func (f *FolderConfig) EffectiveExcludePatterns(global []string) []string {
+	if f.ExcludePatterns != nil {
+		return f.ExcludePatterns
+	}
+	return global
+}
+
+// EffectiveIncludePatterns returns folder-level patterns if set, otherwise global.
+func (f *FolderConfig) EffectiveIncludePatterns(global []string) []string {
+	if f.IncludePatterns != nil {
+		return f.IncludePatterns
+	}
+	return global
 }
 
 func DefaultConfig() Config {

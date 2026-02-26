@@ -37,7 +37,7 @@ func loadGitignore(root string) *ignore.GitIgnore {
 	return gi
 }
 
-func scanFolder(root string, excludePatterns []string, maxSizeKB int) ([]string, error) {
+func scanFolder(root string, excludePatterns, includePatterns []string, maxSizeKB int) ([]string, error) {
 	// Resolve symlinks so WalkDir can traverse the real directory.
 	resolved, err := filepath.EvalSymlinks(root)
 	if err != nil {
@@ -81,9 +81,22 @@ func scanFolder(root string, excludePatterns []string, maxSizeKB int) ([]string,
 			}
 		}
 
-		ext := strings.ToLower(filepath.Ext(name))
-		if !extSet[ext] {
-			return nil
+		if len(includePatterns) > 0 {
+			matched := false
+			for _, p := range includePatterns {
+				if ok, _ := filepath.Match(p, name); ok {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return nil
+			}
+		} else {
+			ext := strings.ToLower(filepath.Ext(name))
+			if !extSet[ext] {
+				return nil
+			}
 		}
 
 		info, err := d.Info()

@@ -39,8 +39,10 @@ rerank_retrieval_weight_bottom = 0.2
 # All supported languages are always enabled for tree-sitter AST chunking:
 # go, python, rust, javascript, typescript, commonlisp
 # Markdown (.md), text (.txt), and org (.org) files are always indexed.
-# Directories to skip during scanning
+# Directories to skip during scanning (global default for all folders)
 exclude_patterns = [".git", "node_modules", "vendor", "__pycache__", ".venv", "dist", "build"]
+# File glob patterns to include (e.g. ["*.go", "*.md"]). Empty = use default extensions.
+# include_patterns = []
 # Skip files larger than this (in KB)
 max_file_size_kb = 512
 
@@ -59,7 +61,11 @@ max_file_size_kb = 512
 [[folders]]
 path = "/home/user/projects/myapp"
 description = "My application"
+# Per-folder overrides (override global [index] defaults when set):
+# exclude_patterns = ["testdata", "vendor"]
+# include_patterns = ["*.go", "*.md"]
 
 # [[folders]]
 # path = "/home/user/notes"
 # description = "Personal notes"
+# include_patterns = ["*.md", "*.txt", "*.org"]
