@@ -1,12 +1,16 @@
 ---
 name: search
-description: "Hybrid semantic + keyword search over source code and documents via poisk. Only use when explicitly requested."
-allowed-tools: Bash(poisk:*)
+description: "Hybrid semantic + keyword search over source code and documents via poisk. Can also help install and configure poisk. Only use when explicitly requested."
+allowed-tools: Bash(poisk:*) Bash(go:*) Read
 ---
 
 # Poisk - Hybrid Search
 
-Search indexed source code and documents using `poisk run` — hybrid semantic + keyword search over indexed content.
+Search indexed source code and documents using `poisk run` — hybrid semantic + keyword search over indexed content. Can also help install and configure poisk from scratch.
+
+## Installation & Configuration
+
+If the user asks to install or configure poisk, see [references/CONFIGURATION.md](references/CONFIGURATION.md) for installation steps, all config options, and how to create custom skills.
 
 ## Usage
 

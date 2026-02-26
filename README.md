@@ -19,7 +19,26 @@ poisk stores everything in a local SQLite database (`~/.local/share/poisk/poisk.
 
 At query time, both results are merged with Reciprocal Rank Fusion — so you get semantic understanding and exact keyword matches in one search. Indexing is incremental: only changed files (by mtime) are re-processed.
 
-## Install
+## Install with Claude Code
+
+The easiest way to get started is with the [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin. It installs a skill that teaches Claude how to use poisk and helps you set everything up.
+
+**1. Install the plugin:**
+
+```bash
+claude plugin marketplace add alexander-akhmetov/poisk
+claude plugin install -s user poisk
+```
+
+**2. Ask Claude to install and configure poisk:**
+
+Claude will help you install the `poisk` binary, create the config file, set up folders, and run the initial index. Just ask it — for example: *"install and configure poisk for my projects"*.
+
+**3. Use it:**
+
+Ask Claude to search with poisk (e.g. *"use poisk to search for authentication middleware"*), or create custom skills that invoke poisk for specific workflows — for example, a skill that searches your notes folder whenever you ask a question about a topic. See the [configuration reference](skills/search/references/CONFIGURATION.md) for examples of custom skills.
+
+## Manual install
 
 Requires Go 1.26+ and CGO (for sqlite3 + sqlite-vec).
 
@@ -35,7 +54,7 @@ cd poisk
 make build
 ```
 
-## Configuration
+### Configuration
 
 poisk needs an OpenAI-compatible embedding API. By default it uses [Ollama](https://ollama.com/) with `nomic-embed-text` at `localhost:11434`.
 
@@ -61,9 +80,9 @@ model = "text-embedding-3-small"
 dimensions = 1536
 ```
 
-## Usage
+See [config.example.toml](config.example.toml) for all options, or the full [configuration reference](skills/search/references/CONFIGURATION.md).
 
-### CLI
+### Usage
 
 ```bash
 # Index all configured folders
@@ -79,17 +98,6 @@ poisk status
 # Start MCP server (stdio transport)
 poisk serve
 ```
-
-### Claude Code
-
-> **Note:** Install the `poisk` binary first (see [Install](#install) above).
-
-```bash
-claude plugin marketplace add alexander-akhmetov/poisk
-claude plugin install poisk
-```
-
-The plugin installs a skill that teaches Claude how to use the poisk CLI. To actually trigger it, you can either ask Claude directly (e.g. "use poisk to search for ...") or create your own skills that invoke poisk for specific workflows — for example, a skill that searches your notes folder whenever you ask a question about a topic.
 
 ### Query syntax
 
