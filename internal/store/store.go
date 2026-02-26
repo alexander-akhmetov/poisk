@@ -49,27 +49,18 @@ func (s *Store) initSchema() error {
 		return fmt.Errorf("create schema_version: %w", err)
 	}
 
-	// Check schema version and migrate if needed, all under a transaction
-	// to prevent concurrent instances from seeing an empty version row.
+	// Check current schema version to decide whether migration is needed.
 	migrated := false
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin schema tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
 	var storedVersion int
-	err = tx.QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&storedVersion)
-	needsMigration := err != nil || storedVersion != schemaVersion
-
-	if needsMigration {
+	err := s.db.QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&storedVersion)
+	if err != nil {
+		slog.Info("schema version not found, initializing with full index",
+			"want", schemaVersion)
+		migrated = true
+	} else if storedVersion != schemaVersion {
 		slog.Info("schema version mismatch, dropping all tables for full reindex",
 			"stored", storedVersion, "want", schemaVersion)
 		migrated = true
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit schema check: %w", err)
 	}
 
 	if migrated {
