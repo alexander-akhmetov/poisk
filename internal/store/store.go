@@ -49,9 +49,21 @@ func (s *Store) initSchema() error {
 		return fmt.Errorf("create schema_version: %w", err)
 	}
 
-	// Check schema version
-	if s.needsSchemaMigration() {
-		slog.Info("schema version mismatch, dropping all tables for full reindex")
+	// Check current schema version to decide whether migration is needed.
+	migrated := false
+	var storedVersion int
+	err := s.db.QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&storedVersion)
+	if err != nil {
+		slog.Info("schema version not found, initializing with full index",
+			"want", schemaVersion)
+		migrated = true
+	} else if storedVersion != schemaVersion {
+		slog.Info("schema version mismatch, dropping all tables for full reindex",
+			"stored", storedVersion, "want", schemaVersion)
+		migrated = true
+	}
+
+	if migrated {
 		s.dropAllTables()
 		// Recreate schema version table after drop
 		if _, err := s.db.Exec(schemaVersionDDL); err != nil {
@@ -65,12 +77,15 @@ func (s *Store) initSchema() error {
 		}
 	}
 
-	// Update stored version
-	if _, err := s.db.Exec("DELETE FROM schema_version"); err != nil {
-		return fmt.Errorf("delete schema_version: %w", err)
-	}
-	if _, err := s.db.Exec("INSERT INTO schema_version (version) VALUES (?)", schemaVersion); err != nil {
-		return fmt.Errorf("insert schema_version: %w", err)
+	// Only write version after a migration to avoid a DELETE+INSERT window
+	// where concurrent readers see an empty table and falsely trigger migration.
+	if migrated {
+		if _, err := s.db.Exec("DELETE FROM schema_version"); err != nil {
+			return fmt.Errorf("delete schema_version: %w", err)
+		}
+		if _, err := s.db.Exec("INSERT INTO schema_version (version) VALUES (?)", schemaVersion); err != nil {
+			return fmt.Errorf("insert schema_version: %w", err)
+		}
 	}
 
 	// vec0 — drop and recreate if dimensions changed
@@ -85,15 +100,6 @@ func (s *Store) initSchema() error {
 	}
 
 	return nil
-}
-
-func (s *Store) needsSchemaMigration() bool {
-	var version int
-	err := s.db.QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&version)
-	if err != nil {
-		return true // no version row = needs migration
-	}
-	return version != schemaVersion
 }
 
 func (s *Store) dropAllTables() {

@@ -176,41 +176,45 @@ func (c *Config) validate() error {
 	if c.Embedding.BatchSize <= 0 {
 		return fmt.Errorf("embedding.batch_size must be > 0")
 	}
-	if c.Search.DefaultTopK <= 0 {
+	return c.Search.validate()
+}
+
+func (s *SearchConfig) validate() error {
+	if s.DefaultTopK <= 0 {
 		return fmt.Errorf("search.default_top_k must be > 0")
 	}
-	if c.Search.RRFk < 0 {
-		return fmt.Errorf("search.rrf_k must be >= 0, got %v", c.Search.RRFk)
+	if s.RRFk < 0 {
+		return fmt.Errorf("search.rrf_k must be >= 0, got %v", s.RRFk)
 	}
-	if c.Search.SimilarityThreshold < 0 || c.Search.SimilarityThreshold > 1 {
-		return fmt.Errorf("search.similarity_threshold must be between 0 and 1, got %v", c.Search.SimilarityThreshold)
+	if s.SimilarityThreshold < 0 || s.SimilarityThreshold > 1 {
+		return fmt.Errorf("search.similarity_threshold must be between 0 and 1, got %v", s.SimilarityThreshold)
 	}
-	if err := validatePositiveFloat(c.Search.VecWeight, "search.vec_weight"); err != nil {
+	if err := validatePositiveFloat(s.VecWeight, "search.vec_weight"); err != nil {
 		return err
 	}
-	if err := validatePositiveFloat(c.Search.FTSWeight, "search.fts_weight"); err != nil {
+	if err := validatePositiveFloat(s.FTSWeight, "search.fts_weight"); err != nil {
 		return err
 	}
-	if err := validatePositiveFloat(c.Search.OriginalQueryWeight, "search.original_query_weight"); err != nil {
+	if err := validatePositiveFloat(s.OriginalQueryWeight, "search.original_query_weight"); err != nil {
 		return err
 	}
-	if err := validatePositiveFloat(c.Search.ExpandedQueryWeight, "search.expanded_query_weight"); err != nil {
+	if err := validatePositiveFloat(s.ExpandedQueryWeight, "search.expanded_query_weight"); err != nil {
 		return err
 	}
-	if c.Search.RerankTopN <= 0 {
-		return fmt.Errorf("search.rerank_top_n must be > 0, got %v", c.Search.RerankTopN)
+	if s.RerankTopN <= 0 {
+		return fmt.Errorf("search.rerank_top_n must be > 0, got %v", s.RerankTopN)
 	}
-	if err := validateWeight(c.Search.RerankTopWeight, "search.rerank_retrieval_weight_top"); err != nil {
+	if err := validateWeight(s.RerankTopWeight, "search.rerank_retrieval_weight_top"); err != nil {
 		return err
 	}
-	if err := validateWeight(c.Search.RerankBottomWeight, "search.rerank_retrieval_weight_bottom"); err != nil {
+	if err := validateWeight(s.RerankBottomWeight, "search.rerank_retrieval_weight_bottom"); err != nil {
 		return err
 	}
-	if c.Search.RerankTopWeight < c.Search.RerankBottomWeight {
-		return fmt.Errorf("search.rerank_retrieval_weight_top must be >= search.rerank_retrieval_weight_bottom, got %v < %v", c.Search.RerankTopWeight, c.Search.RerankBottomWeight)
+	if s.RerankTopWeight < s.RerankBottomWeight {
+		return fmt.Errorf("search.rerank_retrieval_weight_top must be >= search.rerank_retrieval_weight_bottom, got %v < %v", s.RerankTopWeight, s.RerankBottomWeight)
 	}
-	if c.Search.MinScore < 0 || math.IsNaN(c.Search.MinScore) || math.IsInf(c.Search.MinScore, 0) {
-		return fmt.Errorf("search.min_score must be >= 0, got %v", c.Search.MinScore)
+	if s.MinScore < 0 || math.IsNaN(s.MinScore) || math.IsInf(s.MinScore, 0) {
+		return fmt.Errorf("search.min_score must be >= 0, got %v", s.MinScore)
 	}
 	return nil
 }

@@ -341,6 +341,43 @@ func TestSchemaVersionMigrationDropsOldData(t *testing.T) {
 	}
 }
 
+func TestReopenWithSameVersionDoesNotDropData(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "reopen.db")
+
+	s1 := openTestStoreAt(t, dbPath)
+	if err := s1.InsertEntries("src", "main.go", []Entry{
+		{LineNum: 1, EndLine: 1, Text: "func keep()", Embedding: []float32{1, 0, 0}, Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "keep"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s1.UpdateMeta("src", "model-v1", 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := s1.Close(); err != nil {
+		t.Fatalf("close s1: %v", err)
+	}
+
+	// Reopen with the same schema version — data and meta must survive.
+	s2 := openTestStoreAt(t, dbPath)
+
+	count, err := s2.Count("src")
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("count=%d after reopen, want 1 (data was dropped)", count)
+	}
+
+	changed, err := s2.ModelChanged("src", "model-v1", 3)
+	if err != nil {
+		t.Fatalf("ModelChanged: %v", err)
+	}
+	if changed {
+		t.Fatal("ModelChanged=true after reopen with same version; embedding_meta was dropped")
+	}
+}
+
 func TestIdxEmbMetaExists(t *testing.T) {
 	s := openTestStore(t)
 
