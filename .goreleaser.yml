@@ -1,0 +1,14 @@
+version: 2
+builds:
+  - id: poisk
+    main: ./cmd/poisk
+    binary: poisk
+    tags: ["fts5"]
+    env:
+      - CGO_ENABLED=1
+    goos: ["linux", "darwin"]
+    goarch: ["amd64", "arm64"]
+    ldflags:
+      - -s -w -X main.revision={{.Tag}}-{{.ShortCommit}}-{{.CommitDate}}
+archives:
+  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"

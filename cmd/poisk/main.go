@@ -6,6 +6,8 @@ import (
 	"os"
 )
 
+var revision = "dev"
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -22,6 +24,9 @@ func main() {
 		err = cmdRun()
 	case "status":
 		err = cmdStatus()
+	case "version":
+		fmt.Println("poisk", revision)
+		return
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		usage()
@@ -46,5 +51,6 @@ Commands:
             --top-k N         Max results (default from config)
             --folders d1,d2   Filter to specific folders
   status  Show index status
+  version Print version
 `)
 }
