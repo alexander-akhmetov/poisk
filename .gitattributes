@@ -1,0 +1,2 @@
+internal/treesitter/commonlisp/parser.c linguist-generated
+internal/treesitter/commonlisp/tree_sitter/*.h linguist-generated
