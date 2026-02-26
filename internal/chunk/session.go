@@ -105,7 +105,7 @@ func chunkSession(content string) []Chunk {
 		turns = append(turns, *current)
 	}
 
-	var chunks []Chunk
+	chunks := []Chunk{}
 	turnNum := 0
 	for _, t := range turns {
 		turnNum++

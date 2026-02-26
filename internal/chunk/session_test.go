@@ -221,6 +221,10 @@ func TestChunkSession_MinLengthFiltering(t *testing.T) {
 	if len(chunks) != 0 {
 		t.Fatalf("expected 0 chunks (turn too short), got %d", len(chunks))
 	}
+	// Should return non-nil (recognized session) so File() doesn't fall back to chunkSource.
+	if chunks == nil {
+		t.Fatal("expected non-nil empty slice for recognized session with filtered turns")
+	}
 }
 
 func TestChunkSession_LargeTurnSplit(t *testing.T) {
