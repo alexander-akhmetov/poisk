@@ -58,6 +58,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git tag --sort=-v:refname | head -2 | tail -1)
+          if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "${{ github.ref_name }}" ]; then
+            # First release — use all commits
+            RANGE="HEAD"
+          else
+            RANGE="${PREV_TAG}..${{ github.ref_name }}"
+          fi
+          {
+            echo 'CHANGELOG<<EOF'
+            git log --pretty=format:"- %s (%h)" --no-merges "$RANGE"
+            echo ''
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -68,4 +85,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*.tar.gz
-          generate_release_notes: true
+          body: ${{ steps.changelog.outputs.CHANGELOG }}
