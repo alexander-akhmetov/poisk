@@ -28,4 +28,3 @@ type ChunkStore interface {
 	VecAvailable() bool
 	FTSAvailable() bool
 }
-

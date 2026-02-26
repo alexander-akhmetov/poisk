@@ -42,7 +42,7 @@ func (m *mockChunkStore) addChunks(source, filePath string, chunks []domain.Chun
 
 // --- ports.ChunkStore implementation ---
 
-func (m *mockChunkStore) InsertChunks(source, filePath string, chunks []domain.ChunkWithEmbedding) error {
+func (m *mockChunkStore) InsertChunks(_, _ string, _ []domain.ChunkWithEmbedding) error {
 	return nil
 }
 

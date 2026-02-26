@@ -96,7 +96,7 @@ func TestSearchVecRetriesWhenFilteredResultsAreBelowTopK(t *testing.T) {
 		t.Skip("vec0 not available")
 	}
 
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		if err := s.InsertEntries("repo", fmt.Sprintf("noise-%02d.go", i), []store.Entry{
 			{
 				LineNum:   1,

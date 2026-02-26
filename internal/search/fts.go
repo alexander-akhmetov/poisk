@@ -255,7 +255,8 @@ func queryFTS(s *store.Store, ftsQuery string, limit int, folders []string) ([]R
 	query := `SELECT file_path, line_num, end_line, chunk_text, bm25(chunks_fts) AS rank, folder, language, chunk_kind, symbol
 		FROM chunks_fts
 		WHERE chunks_fts MATCH ?`
-	args := []any{ftsQuery}
+	args := make([]any, 0, 2)
+	args = append(args, ftsQuery)
 
 	query, args = appendInClause(query, args, "source", folders)
 	query += " ORDER BY rank ASC LIMIT ?"
