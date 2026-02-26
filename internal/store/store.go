@@ -49,9 +49,30 @@ func (s *Store) initSchema() error {
 		return fmt.Errorf("create schema_version: %w", err)
 	}
 
-	// Check schema version
-	if s.needsSchemaMigration() {
-		slog.Info("schema version mismatch, dropping all tables for full reindex")
+	// Check schema version and migrate if needed, all under a transaction
+	// to prevent concurrent instances from seeing an empty version row.
+	migrated := false
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin schema tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var storedVersion int
+	err = tx.QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&storedVersion)
+	needsMigration := err != nil || storedVersion != schemaVersion
+
+	if needsMigration {
+		slog.Info("schema version mismatch, dropping all tables for full reindex",
+			"stored", storedVersion, "want", schemaVersion)
+		migrated = true
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit schema check: %w", err)
+	}
+
+	if migrated {
 		s.dropAllTables()
 		// Recreate schema version table after drop
 		if _, err := s.db.Exec(schemaVersionDDL); err != nil {
@@ -65,12 +86,15 @@ func (s *Store) initSchema() error {
 		}
 	}
 
-	// Update stored version
-	if _, err := s.db.Exec("DELETE FROM schema_version"); err != nil {
-		return fmt.Errorf("delete schema_version: %w", err)
-	}
-	if _, err := s.db.Exec("INSERT INTO schema_version (version) VALUES (?)", schemaVersion); err != nil {
-		return fmt.Errorf("insert schema_version: %w", err)
+	// Only write version after a migration to avoid a DELETE+INSERT window
+	// where concurrent readers see an empty table and falsely trigger migration.
+	if migrated {
+		if _, err := s.db.Exec("DELETE FROM schema_version"); err != nil {
+			return fmt.Errorf("delete schema_version: %w", err)
+		}
+		if _, err := s.db.Exec("INSERT INTO schema_version (version) VALUES (?)", schemaVersion); err != nil {
+			return fmt.Errorf("insert schema_version: %w", err)
+		}
 	}
 
 	// vec0 — drop and recreate if dimensions changed
@@ -85,15 +109,6 @@ func (s *Store) initSchema() error {
 	}
 
 	return nil
-}
-
-func (s *Store) needsSchemaMigration() bool {
-	var version int
-	err := s.db.QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&version)
-	if err != nil {
-		return true // no version row = needs migration
-	}
-	return version != schemaVersion
 }
 
 func (s *Store) dropAllTables() {
