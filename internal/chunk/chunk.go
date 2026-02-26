@@ -19,6 +19,11 @@ func File(path, content string) ([]Chunk, error) {
 	switch ext {
 	case ".md", ".markdown":
 		return chunkMarkdown(content), nil
+	case ".jsonl":
+		if chunks := chunkSession(content); chunks != nil {
+			return chunks, nil
+		}
+		return chunkSource(content), nil
 	default:
 		// Try tree-sitter for supported languages
 		if _, ok := extToLang[ext]; ok {
