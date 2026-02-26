@@ -36,7 +36,7 @@ Claude will help you install the `poisk` binary, create the config file, set up 
 
 **3. Use it:**
 
-Ask Claude to search with poisk (e.g. *"use poisk to search for authentication middleware"*), or create custom skills that invoke poisk for specific workflows — for example, a skill that searches your notes folder whenever you ask a question about a topic. See the [configuration reference](skills/search/references/CONFIGURATION.md) for examples of custom skills.
+Ask Claude to search with poisk (e.g. *"use poisk to search for authentication middleware"*), or create custom skills that invoke poisk for specific workflows — for example, a skill that searches your notes folder whenever you ask a question about a topic. See the [configuration reference](skills/setup/SKILL.md) for examples of custom skills.
 
 ## Manual install
 
@@ -80,7 +80,7 @@ model = "text-embedding-3-small"
 dimensions = 1536
 ```
 
-See [config.example.toml](config.example.toml) for all options, or the full [configuration reference](skills/search/references/CONFIGURATION.md).
+See [config.example.toml](config.example.toml) for all options, or the full [configuration reference](skills/setup/SKILL.md).
 
 ### Usage
 

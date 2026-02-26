@@ -1,4 +1,12 @@
-# poisk Installation & Configuration
+---
+name: setup
+description: "Install, configure, and manage poisk — hybrid search over local files and codebases. Use when the user asks to install poisk, set up indexing, change config, or create custom search skills."
+allowed-tools: Bash(poisk:*) Bash(go:*) Read Write
+---
+
+# Poisk Setup
+
+Help the user install, configure, and manage poisk.
 
 ## Installation
 
