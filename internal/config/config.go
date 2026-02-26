@@ -56,6 +56,7 @@ type SearchConfig struct {
 	RerankTopN          int     `toml:"rerank_top_n"`
 	RerankTopWeight     float64 `toml:"rerank_retrieval_weight_top"`
 	RerankBottomWeight  float64 `toml:"rerank_retrieval_weight_bottom"`
+	MinScore            float64 `toml:"min_score"`
 }
 
 type IndexConfig struct {
@@ -110,6 +111,7 @@ func DefaultConfig() Config {
 			RerankTopN:          20,
 			RerankTopWeight:     0.8,
 			RerankBottomWeight:  0.2,
+			MinScore:            0.005,
 		},
 		Index: IndexConfig{
 			ExcludePatterns: []string{".git", "node_modules", "vendor", "__pycache__", ".venv"},
@@ -206,6 +208,9 @@ func (c *Config) validate() error {
 	}
 	if c.Search.RerankTopWeight < c.Search.RerankBottomWeight {
 		return fmt.Errorf("search.rerank_retrieval_weight_top must be >= search.rerank_retrieval_weight_bottom, got %v < %v", c.Search.RerankTopWeight, c.Search.RerankBottomWeight)
+	}
+	if c.Search.MinScore < 0 || math.IsNaN(c.Search.MinScore) || math.IsInf(c.Search.MinScore, 0) {
+		return fmt.Errorf("search.min_score must be >= 0, got %v", c.Search.MinScore)
 	}
 	return nil
 }

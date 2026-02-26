@@ -145,6 +145,15 @@ func (s *Searcher) Search(ctx context.Context, query string, topK int, folders [
 		})
 	}
 
+	// Filter results below minimum score threshold
+	if s.cfg.Search.MinScore > 0 && len(merged) > 0 {
+		before := len(merged)
+		merged = filterMinScore(merged, s.cfg.Search.MinScore)
+		if dropped := before - len(merged); dropped > 0 {
+			slog.Info("min_score filter applied", "threshold", s.cfg.Search.MinScore, "dropped", dropped, "remaining", len(merged))
+		}
+	}
+
 	// Annotate results with context from folder config
 	for i := range merged {
 		for _, f := range s.cfg.Folders {

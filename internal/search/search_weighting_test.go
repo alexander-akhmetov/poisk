@@ -134,6 +134,7 @@ func TestSearchExpansionWeightingAffectsRank(t *testing.T) {
 	cfg.Search.QueryExpansion = true
 	cfg.Search.SimilarityThreshold = 0.8
 	cfg.Search.DefaultTopK = 5
+	cfg.Search.MinScore = 0
 	cfg.Folders = []config.FolderConfig{
 		{Path: corpus, Description: "test-corpus"},
 	}

@@ -31,6 +31,9 @@ func TestDefaultConfigHasFusionWeights(t *testing.T) {
 	if cfg.Search.RerankTopWeight < cfg.Search.RerankBottomWeight {
 		t.Fatalf("default rerank blend should favor higher retrieval weight at top: top=%v bottom=%v", cfg.Search.RerankTopWeight, cfg.Search.RerankBottomWeight)
 	}
+	if cfg.Search.MinScore < 0 {
+		t.Fatalf("default min_score must be >= 0, got %v", cfg.Search.MinScore)
+	}
 }
 
 func TestValidateRejectsInvalidFusionWeights(t *testing.T) {
@@ -86,6 +89,21 @@ func TestValidateRejectsInvalidFusionWeights(t *testing.T) {
 				c.Search.RerankBottomWeight = 0.8
 			},
 			want: "search.rerank_retrieval_weight_top",
+		},
+		{
+			name: "min_score negative",
+			edit: func(c *Config) { c.Search.MinScore = -0.1 },
+			want: "search.min_score",
+		},
+		{
+			name: "min_score NaN",
+			edit: func(c *Config) { c.Search.MinScore = math.NaN() },
+			want: "search.min_score",
+		},
+		{
+			name: "min_score Inf",
+			edit: func(c *Config) { c.Search.MinScore = math.Inf(1) },
+			want: "search.min_score",
 		},
 	}
 

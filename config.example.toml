@@ -35,6 +35,9 @@ rerank_top_n = 20
 # Top ranks keep more retrieval signal by default; lower ranks trust reranker more.
 rerank_retrieval_weight_top = 0.8
 rerank_retrieval_weight_bottom = 0.2
+# Drop results below this score after ranking (0 = disabled).
+# Default 0.005 filters bottom-barrel noise from expanded queries.
+min_score = 0.005
 
 [index]
 # All supported languages are always enabled for tree-sitter AST chunking:
