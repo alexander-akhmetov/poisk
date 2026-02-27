@@ -33,6 +33,13 @@ type SearchResult struct {
 	Context  []string
 }
 
+// ModelChange describes the result of a model change check.
+type ModelChange struct {
+	Changed  bool
+	OldModel string
+	OldDims  int
+}
+
 type FolderStats struct {
 	Folder                 string
 	FilesProcessed         int

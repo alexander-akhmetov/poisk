@@ -77,12 +77,15 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 	stats := FolderStats{Folder: folder}
 
 	// Check model change
-	changed, err := ix.store.ModelChanged(folder, ix.cfg.Embedding.Model, ix.cfg.Embedding.Dimensions)
+	mc, err := ix.store.ModelChanged(folder, ix.cfg.Embedding.Model, ix.cfg.Embedding.Dimensions)
 	if err != nil {
 		return stats, err
 	}
-	if changed {
-		slog.Info("model changed, rebuilding", "folder", folder)
+	if mc.Changed {
+		slog.Info("model changed, rebuilding",
+			"folder", folder,
+			"old_model", mc.OldModel, "old_dims", mc.OldDims,
+			"new_model", ix.cfg.Embedding.Model, "new_dims", ix.cfg.Embedding.Dimensions)
 		if err := ix.store.ClearSource(folder); err != nil {
 			return stats, fmt.Errorf("clear source %s: %w", folder, err)
 		}
@@ -147,7 +150,7 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 		}
 		mtime := info.ModTime().UnixNano()
 
-		if oldMtime, ok := tracked[filePath]; ok && oldMtime == mtime && !changed {
+		if oldMtime, ok := tracked[filePath]; ok && oldMtime == mtime && !mc.Changed {
 			stats.FilesSkipped++
 			continue
 		}

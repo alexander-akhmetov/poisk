@@ -126,22 +126,25 @@ func TestInsertAndCount(t *testing.T) {
 func TestModelChanged(t *testing.T) {
 	s := openTestStore(t)
 
-	changed, _ := s.ModelChanged("src", "model-v1", 768)
-	if !changed {
+	mc, _ := s.ModelChanged("src", "model-v1", 768)
+	if !mc.Changed {
 		t.Fatal("expected changed for new source")
 	}
 
 	if err := s.UpdateMeta("src", "model-v1", 768); err != nil {
 		t.Fatal(err)
 	}
-	changed, _ = s.ModelChanged("src", "model-v1", 768)
-	if changed {
+	mc, _ = s.ModelChanged("src", "model-v1", 768)
+	if mc.Changed {
 		t.Fatal("expected not changed")
 	}
 
-	changed, _ = s.ModelChanged("src", "model-v2", 768)
-	if !changed {
+	mc, _ = s.ModelChanged("src", "model-v2", 768)
+	if !mc.Changed {
 		t.Fatal("expected changed after model change")
+	}
+	if mc.OldModel != "model-v1" || mc.OldDims != 768 {
+		t.Fatalf("expected old model=model-v1 dims=768, got model=%s dims=%d", mc.OldModel, mc.OldDims)
 	}
 }
 
@@ -172,8 +175,8 @@ func TestClearSource(t *testing.T) {
 	if ok {
 		t.Fatal("expected mtime cleared")
 	}
-	changed, _ := s.ModelChanged("src", "model", 3)
-	if !changed {
+	mc, _ := s.ModelChanged("src", "model", 3)
+	if !mc.Changed {
 		t.Fatal("expected meta cleared")
 	}
 }
@@ -369,11 +372,11 @@ func TestReopenWithSameVersionDoesNotDropData(t *testing.T) {
 		t.Fatalf("count=%d after reopen, want 1 (data was dropped)", count)
 	}
 
-	changed, err := s2.ModelChanged("src", "model-v1", 3)
+	mc, err := s2.ModelChanged("src", "model-v1", 3)
 	if err != nil {
 		t.Fatalf("ModelChanged: %v", err)
 	}
-	if changed {
+	if mc.Changed {
 		t.Fatal("ModelChanged=true after reopen with same version; embedding_meta was dropped")
 	}
 }
@@ -420,8 +423,8 @@ func TestClearSourceAtomicity(t *testing.T) {
 	if ok {
 		t.Fatal("embedding_files not cleared")
 	}
-	changed, _ := s.ModelChanged("src", "model", 3)
-	if !changed {
+	mc, _ := s.ModelChanged("src", "model", 3)
+	if !mc.Changed {
 		t.Fatal("embedding_meta not cleared")
 	}
 

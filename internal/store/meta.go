@@ -3,21 +3,23 @@ package store
 import (
 	"database/sql"
 	"errors"
+
+	"github.com/alexander-akhmetov/poisk/internal/domain"
 )
 
-func (s *Store) ModelChanged(source, model string, dimensions int) (bool, error) {
-	var storedModel string
-	var storedDims int
+func (s *Store) ModelChanged(source, model string, dimensions int) (domain.ModelChange, error) {
+	var mc domain.ModelChange
 	err := s.db.QueryRow(
 		"SELECT model, dimensions FROM embedding_meta WHERE source = ?", source,
-	).Scan(&storedModel, &storedDims)
+	).Scan(&mc.OldModel, &mc.OldDims)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return true, nil
+			return domain.ModelChange{Changed: true}, nil
 		}
-		return false, err
+		return mc, err
 	}
-	return storedModel != model || storedDims != dimensions, nil
+	mc.Changed = mc.OldModel != model || mc.OldDims != dimensions
+	return mc, nil
 }
 
 func (s *Store) AllSources() ([]string, error) {

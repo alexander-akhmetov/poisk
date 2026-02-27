@@ -294,8 +294,8 @@ func TestIndexAllPrunesRemovedFolders(t *testing.T) {
 	}
 
 	// Verify meta is cleared too
-	changed, _ := db.ModelChanged(dir2, "test-embedding", 3)
-	if !changed {
+	mc, _ := db.ModelChanged(dir2, "test-embedding", 3)
+	if !mc.Changed {
 		t.Fatal("expected meta cleared for pruned folder")
 	}
 }

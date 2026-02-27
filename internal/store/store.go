@@ -58,8 +58,8 @@ func (s *Store) initSchema() error {
 			"want", schemaVersion)
 		migrated = true
 	} else if storedVersion != schemaVersion {
-		slog.Info("schema version mismatch, dropping all tables for full reindex",
-			"stored", storedVersion, "want", schemaVersion)
+		slog.Info(fmt.Sprintf("schema version mismatch (stored=%d, want=%d), dropping all tables for full reindex",
+			storedVersion, schemaVersion))
 		migrated = true
 	}
 
