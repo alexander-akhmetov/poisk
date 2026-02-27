@@ -3,6 +3,7 @@ package search
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -276,16 +277,8 @@ func queryFTS(s *store.Store, ftsQuery string, limit int, folders []string) ([]R
 		if err := rows.Scan(&r.FilePath, &lineStr, &endLineStr, &r.Text, &rank, &r.Folder, &r.Language, &r.Kind, &r.Symbol); err != nil {
 			return nil, err
 		}
-		for _, ch := range lineStr {
-			if ch >= '0' && ch <= '9' {
-				r.LineNum = r.LineNum*10 + int(ch-'0')
-			}
-		}
-		for _, ch := range endLineStr {
-			if ch >= '0' && ch <= '9' {
-				r.EndLine = r.EndLine*10 + int(ch-'0')
-			}
-		}
+		r.LineNum, _ = strconv.Atoi(lineStr)
+		r.EndLine, _ = strconv.Atoi(endLineStr)
 		ar := math.Abs(rank)
 		r.Score = ar / (1.0 + ar)
 		results = append(results, r)
