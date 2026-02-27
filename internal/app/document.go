@@ -74,6 +74,10 @@ func (d *DocumentService) GetMultipleDocuments(pathsCSV string, maxBytes int) ([
 			continue
 		}
 		if isGlob(pat) {
+			if _, err := filepath.Match(pat, ""); err != nil {
+				slog.Warn("multi_get: bad glob pattern", "pattern", pat, "error", err)
+				continue
+			}
 			for _, f := range d.cfg.Folders {
 				tracked, err := d.store.TrackedFilePaths(f.Path)
 				if err != nil {
@@ -81,11 +85,7 @@ func (d *DocumentService) GetMultipleDocuments(pathsCSV string, maxBytes int) ([
 					continue
 				}
 				for _, tp := range tracked {
-					matched, err := filepath.Match(pat, tp)
-					if err != nil {
-						slog.Warn("multi_get: bad glob pattern", "pattern", pat, "error", err)
-						break
-					}
+					matched, _ := filepath.Match(pat, tp)
 					if !matched {
 						matched, _ = filepath.Match(pat, filepath.Base(tp))
 					}
