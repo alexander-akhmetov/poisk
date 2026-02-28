@@ -93,6 +93,46 @@ func TestEmbedBatchDimensionMismatch(t *testing.T) {
 	}
 }
 
+func TestEmbed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req embeddingRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+		if len(req.Input) != 1 {
+			t.Fatalf("expected 1 input, got %d", len(req.Input))
+		}
+		if req.Input[0] != "hello world" {
+			t.Errorf("input = %q, want %q", req.Input[0], "hello world")
+		}
+
+		resp := embeddingResponse{
+			Data: []struct {
+				Embedding []float32 `json:"embedding"`
+				Index     int       `json:"index"`
+			}{
+				{Embedding: []float32{0.1, 0.2, 0.3}, Index: 0},
+			},
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Fatal(err)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "", "test-model", 3, true)
+	embedding, err := client.Embed(context.Background(), "hello world")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(embedding) != 3 {
+		t.Fatalf("got %d dimensions, want 3", len(embedding))
+	}
+	if embedding[0] != 0.1 || embedding[1] != 0.2 || embedding[2] != 0.3 {
+		t.Errorf("embedding = %v, want [0.1 0.2 0.3]", embedding)
+	}
+}
+
 func TestEmbedBatchAuthHeader(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")

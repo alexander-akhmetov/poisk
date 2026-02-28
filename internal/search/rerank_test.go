@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -208,6 +209,33 @@ func TestTruncateRunes(t *testing.T) {
 			got := truncateRunes(tt.input, tt.maxRunes)
 			if got != tt.want {
 				t.Fatalf("truncateRunes(%q, %d) = %q, want %q", tt.input, tt.maxRunes, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSanitizeWeight(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    float64
+		fallback float64
+		want     float64
+	}{
+		{"normal value", 0.5, 0.8, 0.5},
+		{"zero", 0.0, 0.8, 0.0},
+		{"one", 1.0, 0.8, 1.0},
+		{"negative clamps to zero", -0.5, 0.8, 0.0},
+		{"above one clamps to one", 1.5, 0.8, 1.0},
+		{"NaN returns fallback", math.NaN(), 0.8, 0.8},
+		{"positive Inf returns fallback", math.Inf(1), 0.8, 0.8},
+		{"negative Inf returns fallback", math.Inf(-1), 0.8, 0.8},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizeWeight(tt.value, tt.fallback)
+			if got != tt.want {
+				t.Fatalf("sanitizeWeight(%v, %v) = %v, want %v", tt.value, tt.fallback, got, tt.want)
 			}
 		})
 	}

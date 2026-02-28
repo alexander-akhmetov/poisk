@@ -1,6 +1,7 @@
 package chunk
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -693,4 +694,225 @@ func TestLangForExt(t *testing.T) {
 	if got := LangForExt(".unknown"); got != "" {
 		t.Errorf("LangForExt(.unknown) = %q, want empty", got)
 	}
+}
+
+func TestOversizedNode(t *testing.T) {
+	// Build a Go const block exceeding maxChunkBytes (8000).
+	// Each const_spec is a separate child node, so splitOversizedNode
+	// can split at child boundaries.
+	var sb strings.Builder
+	sb.WriteString("package example\n\nconst (\n")
+	for i := range 200 {
+		// ~50 bytes per spec × 200 = ~10000 bytes
+		sb.WriteString("\tC")
+		sb.WriteString(strings.Repeat("x", 5))
+		sb.WriteString(fmt.Sprintf("%03d", i))
+		sb.WriteString(" = \"")
+		sb.WriteString(strings.Repeat("a", 30))
+		sb.WriteString("\"\n")
+	}
+	sb.WriteString(")\n")
+
+	content := sb.String()
+	constStart := strings.Index(content, "const")
+	constBlock := content[constStart:]
+	if len(constBlock) <= maxChunkBytes {
+		t.Fatalf("test fixture too small: %d bytes, need > %d", len(constBlock), maxChunkBytes)
+	}
+
+	chunks, err := File("big.go", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) < 2 {
+		t.Fatalf("got %d chunks, want >= 2 (oversized node should be split)", len(chunks))
+	}
+
+	for _, c := range chunks {
+		if c.Language != "go" {
+			t.Errorf("language = %q, want go", c.Language)
+		}
+		if c.Kind != "const_declaration" {
+			t.Errorf("kind = %q, want const_declaration", c.Kind)
+		}
+		if c.StartLine == 0 || c.EndLine == 0 {
+			t.Error("missing line range")
+		}
+	}
+}
+
+func TestExtractSymbolVariants(t *testing.T) {
+	cases := []struct {
+		name       string
+		file       string
+		content    string
+		wantSymbol string
+		wantKind   string
+		wantLang   string
+	}{
+		{
+			name: "go_type_decl",
+			file: "example.go",
+			content: `package example
+
+type MyStruct struct {
+	Field1 string
+	Field2 int
+}
+`,
+			wantSymbol: "MyStruct",
+			wantKind:   "type_declaration",
+			wantLang:   "go",
+		},
+		{
+			name: "go_const_block",
+			file: "example.go",
+			content: `package example
+
+const (
+	Alpha = "alpha"
+	Beta  = "beta"
+	Gamma = "gamma"
+)
+`,
+			wantSymbol: "Alpha",
+			wantKind:   "const_declaration",
+			wantLang:   "go",
+		},
+		{
+			name: "python_decorated_func",
+			file: "example.py",
+			content: `@staticmethod
+def compute(x):
+    return x * 2
+`,
+			wantSymbol: "compute",
+			wantKind:   "decorated_definition",
+			wantLang:   "python",
+		},
+		{
+			name: "js_arrow_const",
+			file: "example.js",
+			content: `const greet = (name) => {
+    return "Hello, " + name;
+};
+`,
+			wantSymbol: "greet",
+			wantKind:   "lexical_declaration",
+			wantLang:   "javascript",
+		},
+		{
+			name: "rust_impl_type",
+			file: "example.rs",
+			content: `struct Server {
+    port: u16,
+}
+
+impl Server {
+    fn start(&self) {
+        println!("starting on {}", self.port);
+    }
+}
+`,
+			wantSymbol: "Server",
+			wantKind:   "struct_item",
+			wantLang:   "rust",
+		},
+		{
+			name: "ts_export_function",
+			file: "example.ts",
+			content: `export function handleRequest(req: Request): Response {
+    return new Response("ok");
+}
+`,
+			wantSymbol: "handleRequest",
+			wantKind:   "export_statement",
+			wantLang:   "typescript",
+		},
+		{
+			name: "rust_trait",
+			file: "example.rs",
+			content: `trait Drawable {
+    fn draw(&self);
+    fn area(&self) -> f64;
+}
+`,
+			wantSymbol: "Drawable",
+			wantKind:   "trait_item",
+			wantLang:   "rust",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			chunks, err := File(tc.file, tc.content)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			found := false
+			for _, c := range chunks {
+				if c.Symbol == tc.wantSymbol {
+					found = true
+					if c.Kind != tc.wantKind {
+						t.Errorf("kind = %q, want %q", c.Kind, tc.wantKind)
+					}
+					if c.Language != tc.wantLang {
+						t.Errorf("language = %q, want %q", c.Language, tc.wantLang)
+					}
+					break
+				}
+			}
+			if !found {
+				t.Errorf("did not find symbol %q, got: %v", tc.wantSymbol, chunkSymbols(chunks))
+			}
+		})
+	}
+}
+
+func TestSplitLargeMarkdownSection(t *testing.T) {
+	// Build markdown with nested headings (to produce a heading path >= 20 chars)
+	// followed by >8000 bytes of continuous text. The text has no blank-line
+	// paragraph breaks, so it accumulates into a single flush() call that
+	// exceeds maxSectionChars and triggers splitLargeSection.
+	//
+	// splitLargeSection splits on "\n\n". The only "\n\n" comes from the
+	// heading path being prepended: "headingPath\n\ncontent". A sufficiently
+	// long heading path (>= 20 chars) ensures the first split part is emitted
+	// as a chunk, producing at least 2 chunks total.
+	var sb strings.Builder
+	sb.WriteString("# Architecture Guide\n\n")
+	sb.WriteString("## Storage Layer Details\n\n")
+	// 150 lines × ~75 chars = ~11250 chars of continuous text
+	for range 150 {
+		sb.WriteString(strings.Repeat("word ", 15))
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\n")
+
+	content := sb.String()
+	chunks, err := File("big.md", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) < 2 {
+		t.Fatalf("got %d chunks, want >= 2 (large section should be split), got: %v",
+			len(chunks), chunkSummary(chunks))
+	}
+	for _, c := range chunks {
+		if c.Language != "markdown" {
+			t.Errorf("language = %q, want markdown", c.Language)
+		}
+		if c.Kind != "paragraph" {
+			t.Errorf("kind = %q, want paragraph (split section)", c.Kind)
+		}
+	}
+}
+
+func chunkSummary(chunks []Chunk) []string {
+	out := make([]string, 0, len(chunks))
+	for _, c := range chunks {
+		out = append(out, fmt.Sprintf("{kind=%s len=%d symbol=%q}", c.Kind, len(c.Text), c.Symbol))
+	}
+	return out
 }

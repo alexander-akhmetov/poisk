@@ -1,11 +1,16 @@
 package app
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/alexander-akhmetov/poisk/internal/config"
+	"github.com/alexander-akhmetov/poisk/internal/embed"
 	"github.com/alexander-akhmetov/poisk/internal/index"
+	"github.com/alexander-akhmetov/poisk/internal/store"
 )
 
 func TestValidateFolder(t *testing.T) {
@@ -141,5 +146,101 @@ func TestConvertStat(t *testing.T) {
 	}
 	if out.FilesSkippedParseError != in.FilesSkippedParseError {
 		t.Errorf("FilesSkippedParseError = %d, want %d", out.FilesSkippedParseError, in.FilesSkippedParseError)
+	}
+}
+
+func TestIndexServiceIntegration(t *testing.T) {
+	dims := 256
+
+	embSrv := newAppTestEmbeddingServer(t, dims)
+	defer embSrv.Close()
+
+	corpus := t.TempDir()
+	if err := os.WriteFile(filepath.Join(corpus, "main.go"), []byte(`package main
+
+func main() {
+	fmt.Println("hello world")
+}
+`), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Embedding.BaseURL = embSrv.URL
+	cfg.Embedding.Model = "test-embedding"
+	cfg.Embedding.Dimensions = dims
+	cfg.Embedding.BatchSize = 16
+	cfg.Index.MaxFileSizeKB = 1024
+	cfg.Folders = []config.FolderConfig{
+		{Path: corpus, Description: "test"},
+	}
+
+	dbPath := filepath.Join(t.TempDir(), "index-svc.db")
+	db, err := store.Open(dbPath, dims)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	if !db.VecAvailable() {
+		t.Skip("vec0 not available")
+	}
+
+	embedClient := embed.NewClient(
+		cfg.Embedding.BaseURL,
+		cfg.Embedding.APIKey,
+		cfg.Embedding.Model,
+		cfg.Embedding.Dimensions,
+		cfg.Embedding.SendDimensions,
+	)
+	indexer := index.NewIndexer(db, embedClient, &cfg)
+	svc := NewIndexService(indexer, db, &cfg)
+
+	tests := []struct {
+		name  string
+		run   func(t *testing.T)
+	}{
+		{
+			name: "IndexAll indexes configured folders",
+			run: func(t *testing.T) {
+				stats, err := svc.IndexAll(context.Background())
+				if err != nil {
+					t.Fatalf("IndexAll: %v", err)
+				}
+				if len(stats) != 1 {
+					t.Fatalf("expected 1 folder stat, got %d", len(stats))
+				}
+				if stats[0].Folder != corpus {
+					t.Errorf("folder = %q, want %q", stats[0].Folder, corpus)
+				}
+				if stats[0].FilesProcessed == 0 && stats[0].FilesSkipped == 0 {
+					t.Error("expected at least one file processed or skipped")
+				}
+			},
+		},
+		{
+			name: "IndexFolder indexes single folder",
+			run: func(t *testing.T) {
+				stat, err := svc.IndexFolder(context.Background(), corpus)
+				if err != nil {
+					t.Fatalf("IndexFolder: %v", err)
+				}
+				if stat.Folder != corpus {
+					t.Errorf("folder = %q, want %q", stat.Folder, corpus)
+				}
+			},
+		},
+		{
+			name: "IndexFolder with invalid path returns error",
+			run: func(t *testing.T) {
+				_, err := svc.IndexFolder(context.Background(), "/nonexistent/path/xyz")
+				if err == nil {
+					t.Fatal("expected error for invalid path")
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, tt.run)
 	}
 }
