@@ -12,6 +12,7 @@ import (
 	"github.com/alexander-akhmetov/poisk/internal/store"
 )
 
+//nolint:gocyclo // table-driven test with many cases
 func TestSearchIntegration(t *testing.T) {
 	ctx := context.Background()
 	dims := 256

@@ -22,7 +22,7 @@ import (
 
 func testEmbeddingVector(text string, dims int) []float32 {
 	vec := make([]float32, dims)
-	for _, tok := range strings.Fields(text) {
+	for tok := range strings.FieldsSeq(text) {
 		h := fnv.New32a()
 		_, _ = h.Write([]byte(tok))
 		idx := int(h.Sum32() % uint32(dims))

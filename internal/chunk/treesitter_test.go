@@ -706,7 +706,7 @@ func TestOversizedNode(t *testing.T) {
 		// ~50 bytes per spec × 200 = ~10000 bytes
 		sb.WriteString("\tC")
 		sb.WriteString(strings.Repeat("x", 5))
-		sb.WriteString(fmt.Sprintf("%03d", i))
+		fmt.Fprintf(&sb, "%03d", i)
 		sb.WriteString(" = \"")
 		sb.WriteString(strings.Repeat("a", 30))
 		sb.WriteString("\"\n")
@@ -715,6 +715,9 @@ func TestOversizedNode(t *testing.T) {
 
 	content := sb.String()
 	constStart := strings.Index(content, "const")
+	if constStart < 0 {
+		t.Fatal("const block not found in generated content")
+	}
 	constBlock := content[constStart:]
 	if len(constBlock) <= maxChunkBytes {
 		t.Fatalf("test fixture too small: %d bytes, need > %d", len(constBlock), maxChunkBytes)

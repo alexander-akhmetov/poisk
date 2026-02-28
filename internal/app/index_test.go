@@ -196,8 +196,8 @@ func main() {
 	svc := NewIndexService(indexer, db, &cfg)
 
 	tests := []struct {
-		name  string
-		run   func(t *testing.T)
+		name string
+		run  func(t *testing.T)
 	}{
 		{
 			name: "IndexAll indexes configured folders",
