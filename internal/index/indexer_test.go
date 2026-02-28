@@ -3,6 +3,7 @@ package index
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -230,6 +231,74 @@ func TestIndexFolderRemovesOldDataWhenEmbeddingFails(t *testing.T) {
 	}
 	if tracked[filePath] != t1.UnixNano() {
 		t.Fatalf("tracked mtime=%d, want previous successful mtime %d", tracked[filePath], t1.UnixNano())
+	}
+}
+
+func TestIndexFolderDeletedFile(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	filePath := filepath.Join(dir, "doc.txt")
+
+	server := newTestEmbeddingServer(t, 3, 0)
+	defer server.Close()
+	indexer, db := newTestIndexer(t, dir, server.URL)
+
+	t1 := time.Unix(1_700_000_010, 100)
+	writeFileWithMtime(t, filePath, "this line is long enough to be indexed as one chunk for deletion test", t1)
+	if _, err := indexer.IndexFolder(context.Background(), dir); err != nil {
+		t.Fatalf("first index: %v", err)
+	}
+
+	count, err := db.Count(dir)
+	if err != nil {
+		t.Fatalf("count after first index: %v", err)
+	}
+	if count == 0 {
+		t.Fatal("expected indexed chunks after first index")
+	}
+
+	// Delete the file from disk
+	if err := os.Remove(filePath); err != nil {
+		t.Fatalf("remove file: %v", err)
+	}
+
+	// Re-index — the deleted file's stale entries should be pruned
+	if _, err := indexer.IndexFolder(context.Background(), dir); err != nil {
+		t.Fatalf("second index: %v", err)
+	}
+
+	count, err = db.Count(dir)
+	if err != nil {
+		t.Fatalf("count after re-index: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected stale chunks removed after file deletion, count=%d", count)
+	}
+
+	tracked, err := db.TrackedFiles(dir)
+	if err != nil {
+		t.Fatalf("tracked files: %v", err)
+	}
+	if _, ok := tracked[filePath]; ok {
+		t.Fatal("expected tracked mtime removed for deleted file")
+	}
+}
+
+func TestIndexFolderContextCancelled(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	writeFileWithMtime(t, filepath.Join(dir, "doc.txt"),
+		"this line is long enough to be indexed as one chunk for context test",
+		time.Unix(1_700_000_020, 100))
+
+	server := newTestEmbeddingServer(t, 3, 0)
+	defer server.Close()
+	indexer, _ := newTestIndexer(t, dir, server.URL)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	_, err := indexer.IndexFolder(ctx, dir)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
 	}
 }
 

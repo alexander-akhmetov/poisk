@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/alexander-akhmetov/poisk/internal/domain"
 )
 
 func openTestStore(t *testing.T) *Store {
@@ -496,6 +498,169 @@ func TestDeleteFileAtomicity(t *testing.T) {
 		if ftsCount != 0 {
 			t.Fatal("chunks_fts for a.go not cleared")
 		}
+	}
+}
+
+func TestInsertAndGetChunks(t *testing.T) {
+	s := openTestStore(t)
+
+	chunks := []domain.ChunkWithEmbedding{
+		{
+			Chunk: domain.Chunk{
+				Source:   "src",
+				FilePath: "main.go",
+				LineNum:  1,
+				EndLine:  5,
+				Text:     "package main",
+				Folder:   "src",
+				Language: "go",
+				Kind:     "package_clause",
+				Symbol:   "main",
+			},
+			Embedding: []float32{1, 0, 0},
+		},
+		{
+			Chunk: domain.Chunk{
+				Source:   "src",
+				FilePath: "main.go",
+				LineNum:  10,
+				EndLine:  20,
+				Text:     "func hello() {}",
+				Folder:   "src",
+				Language: "go",
+				Kind:     "function_declaration",
+				Symbol:   "hello",
+			},
+			Embedding: []float32{0, 1, 0},
+		},
+	}
+
+	if err := s.InsertChunks("src", "main.go", chunks); err != nil {
+		t.Fatalf("InsertChunks: %v", err)
+	}
+
+	got, err := s.GetChunksByPath("src", "main.go")
+	if err != nil {
+		t.Fatalf("GetChunksByPath: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d chunks, want 2", len(got))
+	}
+
+	// Ordered by line_num
+	if got[0].LineNum != 1 || got[1].LineNum != 10 {
+		t.Fatalf("order: lines %d, %d; want 1, 10", got[0].LineNum, got[1].LineNum)
+	}
+
+	// Metadata roundtrip
+	if got[0].Symbol != "main" || got[0].Language != "go" || got[0].Kind != "package_clause" {
+		t.Errorf("chunk 0 metadata: symbol=%q lang=%q kind=%q", got[0].Symbol, got[0].Language, got[0].Kind)
+	}
+	if got[1].Symbol != "hello" || got[1].Kind != "function_declaration" {
+		t.Errorf("chunk 1 metadata: symbol=%q kind=%q", got[1].Symbol, got[1].Kind)
+	}
+
+	// Different source returns empty
+	empty, err := s.GetChunksByPath("other", "main.go")
+	if err != nil {
+		t.Fatalf("GetChunksByPath other: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Fatalf("expected 0 chunks for other source, got %d", len(empty))
+	}
+}
+
+func TestTrackedFileCount(t *testing.T) {
+	s := openTestStore(t)
+
+	// Empty source
+	count, err := s.TrackedFileCount("src")
+	if err != nil {
+		t.Fatalf("count empty: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("empty count = %d, want 0", count)
+	}
+
+	// Add files
+	for _, f := range []string{"a.go", "b.go", "c.go"} {
+		if err := s.SetFileMtime("src", f, 100); err != nil {
+			t.Fatalf("SetFileMtime %s: %v", f, err)
+		}
+	}
+	if err := s.SetFileMtime("other", "d.go", 200); err != nil {
+		t.Fatal(err)
+	}
+
+	count, err = s.TrackedFileCount("src")
+	if err != nil {
+		t.Fatalf("count src: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("src count = %d, want 3", count)
+	}
+
+	count, err = s.TrackedFileCount("other")
+	if err != nil {
+		t.Fatalf("count other: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("other count = %d, want 1", count)
+	}
+}
+
+func TestVec0DimensionChange(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "dims.db")
+
+	// Open with dims=3, insert data, close
+	s1, err := Open(dbPath, 3)
+	if err != nil {
+		t.Fatalf("open dims=3: %v", err)
+	}
+	if !s1.VecAvailable() {
+		s1.Close()
+		t.Skip("vec0 not available")
+	}
+	if err := s1.InsertEntries("src", "main.go", []Entry{
+		{LineNum: 1, EndLine: 5, Text: "func A()", Embedding: []float32{1, 0, 0}, Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "A"},
+	}); err != nil {
+		t.Fatalf("insert dims=3: %v", err)
+	}
+	if err := s1.UpdateMeta("src", "model-v1", 3); err != nil {
+		t.Fatalf("update meta dims=3: %v", err)
+	}
+	if err := s1.Close(); err != nil {
+		t.Fatalf("close dims=3: %v", err)
+	}
+
+	// Reopen with dims=5 — vec0 table should be recreated
+	s2, err := Open(dbPath, 5)
+	if err != nil {
+		t.Fatalf("open dims=5: %v", err)
+	}
+	defer s2.Close()
+
+	if !s2.VecAvailable() {
+		t.Fatal("expected vec0 available after dimension change")
+	}
+
+	// Old vec data should be gone (vec0 table was dropped and recreated)
+	var vecCount int
+	if err := s2.DB().QueryRow("SELECT COUNT(*) FROM vec_embeddings").Scan(&vecCount); err != nil {
+		t.Fatalf("count vec_embeddings: %v", err)
+	}
+	if vecCount != 0 {
+		t.Fatalf("expected 0 vec entries after dimension change, got %d", vecCount)
+	}
+
+	// Stale meta with old dimensions should be cleaned
+	mc, err := s2.ModelChanged("src", "model-v1", 5)
+	if err != nil {
+		t.Fatalf("ModelChanged: %v", err)
+	}
+	if !mc.Changed {
+		t.Fatal("expected model changed after dimension increase")
 	}
 }
 
