@@ -26,7 +26,7 @@ func NewClient(baseURL, apiKey, model string, dimensions int, sendDimensions boo
 		model:          model,
 		dimensions:     dimensions,
 		sendDimensions: sendDimensions,
-		http:           &http.Client{Timeout: 120 * time.Second},
+		http:           &http.Client{Timeout: 600 * time.Second},
 	}
 }
 
