@@ -51,6 +51,7 @@ Commands:
             --top-k N         Max results (default from config)
             --folders d1,d2   Filter to specific folders
   status  Show index status
+            --json        Output as JSON
   version Print version
 `)
 }

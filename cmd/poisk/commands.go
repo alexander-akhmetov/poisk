@@ -183,6 +183,13 @@ func printResult(r domain.SearchResult) {
 }
 
 func cmdStatus() error {
+	jsonOutput := false
+	for i := 2; i < len(os.Args); i++ {
+		if os.Args[i] == "--json" {
+			jsonOutput = true
+		}
+	}
+
 	d, err := bootstrap()
 	if err != nil {
 		return err
@@ -191,11 +198,19 @@ func cmdStatus() error {
 
 	status := d.StatusSvc.GetStatus()
 
+	if jsonOutput {
+		return printStatusJSON(status)
+	}
+	printStatusHuman(status)
+	return nil
+}
+
+func printStatusJSON(status domain.IndexStatus) error {
 	output := struct {
-		Folders      []FolderStatusJSON      `json:"folders"`
-		VecAvailable bool                    `json:"vec_available"`
-		FTSAvailable bool                    `json:"fts_available"`
-		Indexing     []IndexingProgressJSON  `json:"indexing,omitempty"`
+		Folders      []FolderStatusJSON     `json:"folders"`
+		VecAvailable bool                   `json:"vec_available"`
+		FTSAvailable bool                   `json:"fts_available"`
+		Indexing     []IndexingProgressJSON `json:"indexing,omitempty"`
 	}{
 		VecAvailable: status.VecAvailable,
 		FTSAvailable: status.FTSAvailable,
@@ -224,6 +239,55 @@ func cmdStatus() error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(output)
+}
+
+const (
+	colorReset  = "\033[0m"
+	colorBold   = "\033[1m"
+	colorDim    = "\033[2m"
+	colorGreen  = "\033[32m"
+	colorRed    = "\033[31m"
+	colorYellow = "\033[33m"
+	colorCyan   = "\033[36m"
+)
+
+func printStatusHuman(status domain.IndexStatus) {
+	// Features
+	vec := colorRed + "no" + colorReset
+	if status.VecAvailable {
+		vec = colorGreen + "yes" + colorReset
+	}
+	fts := colorRed + "no" + colorReset
+	if status.FTSAvailable {
+		fts = colorGreen + "yes" + colorReset
+	}
+	fmt.Printf("Vector search: %s\n", vec)
+	fmt.Printf("FTS search:    %s\n", fts)
+
+	// Indexing progress (build lookup)
+	progressByFolder := make(map[string]domain.IndexingProgress)
+	for _, p := range status.Indexing {
+		progressByFolder[p.Folder] = p
+	}
+
+	// Folders
+	fmt.Printf("\n%sFolders (%d):%s\n", colorBold, len(status.Folders), colorReset)
+	for _, f := range status.Folders {
+		desc := ""
+		if f.Description != "" {
+			desc = colorDim + " — " + f.Description + colorReset
+		}
+		fmt.Printf("  %s%s%s%s\n", colorCyan, f.Path, colorReset, desc)
+		fmt.Printf("    %d files, %d chunks\n", f.Files, f.Chunks)
+
+		if p, ok := progressByFolder[f.Path]; ok {
+			pct := 0.0
+			if p.Total > 0 {
+				pct = float64(p.Processed) / float64(p.Total) * 100
+			}
+			fmt.Printf("    %sindexing: %d/%d files (%.1f%%)%s\n", colorYellow, p.Processed, p.Total, pct, colorReset)
+		}
+	}
 }
 
 // FolderStatusJSON is the JSON representation of folder status in CLI output.

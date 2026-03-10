@@ -111,9 +111,9 @@ func writeFixture(t *testing.T, dir, name, content string) string {
 	return path
 }
 
-// TestStatusOutputStructure verifies that the status JSON output has the
+// TestStatusJSONOutputStructure verifies that the --json status output has the
 // expected shape — this is the contract that MCP clients and scripts depend on.
-func TestStatusOutputStructure(t *testing.T) {
+func TestStatusJSONOutputStructure(t *testing.T) {
 	ts := newTestStack(t)
 
 	writeFixture(t, ts.Corpus, "hello.go", "package main\n\nfunc main() { println(\"hello world from test fixture\") }\n")
@@ -121,7 +121,7 @@ func TestStatusOutputStructure(t *testing.T) {
 		t.Fatalf("index: %v", err)
 	}
 
-	// Build status JSON the same way cmdStatus does.
+	// Build status JSON the same way printStatusJSON does.
 	status := struct {
 		Folders      []FolderStatusJSON `json:"folders"`
 		VecAvailable bool               `json:"vec_available"`
