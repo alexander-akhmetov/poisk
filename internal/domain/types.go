@@ -68,5 +68,5 @@ type IndexStatus struct {
 	VecAvailable bool
 	FTSAvailable bool
 	Folders      []FolderStatus
-	Indexing      []IndexingProgress
+	Indexing     []IndexingProgress
 }
