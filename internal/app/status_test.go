@@ -114,6 +114,49 @@ func TestGetStatus(t *testing.T) {
 		}
 	})
 
+	t.Run("indexing progress included", func(t *testing.T) {
+		store := newMockStore()
+		store.indexingProgress = []domain.IndexingProgress{
+			{Folder: "/repo", Total: 100, Processed: 42, StartedAt: 1700000000},
+		}
+		cfg := &config.Config{
+			Folders: []config.FolderConfig{
+				{Path: "/repo", Description: "test repo"},
+			},
+		}
+		svc := NewStatusService(store, cfg)
+		status := svc.GetStatus()
+
+		if len(status.Indexing) != 1 {
+			t.Fatalf("got %d indexing entries, want 1", len(status.Indexing))
+		}
+		p := status.Indexing[0]
+		if p.Folder != "/repo" {
+			t.Errorf("Folder = %q, want %q", p.Folder, "/repo")
+		}
+		if p.Total != 100 {
+			t.Errorf("Total = %d, want 100", p.Total)
+		}
+		if p.Processed != 42 {
+			t.Errorf("Processed = %d, want 42", p.Processed)
+		}
+	})
+
+	t.Run("no indexing progress when idle", func(t *testing.T) {
+		store := newMockStore()
+		cfg := &config.Config{
+			Folders: []config.FolderConfig{
+				{Path: "/repo"},
+			},
+		}
+		svc := NewStatusService(store, cfg)
+		status := svc.GetStatus()
+
+		if len(status.Indexing) != 0 {
+			t.Errorf("got %d indexing entries, want 0", len(status.Indexing))
+		}
+	})
+
 	t.Run("store error logged gracefully", func(t *testing.T) {
 		store := newMockStore()
 		store.errCount = fmt.Errorf("count error")

@@ -88,6 +88,11 @@ func (s *Store) initSchema() error {
 		}
 	}
 
+	// Indexing progress (not versioned — transient runtime state)
+	if _, err := s.db.Exec(indexingProgressDDL); err != nil {
+		return fmt.Errorf("create indexing_progress: %w", err)
+	}
+
 	// Drop legacy embedding blob column if it exists.
 	s.dropEmbeddingColumn()
 

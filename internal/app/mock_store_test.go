@@ -11,8 +11,9 @@ type mockChunkStore struct {
 	chunks  map[string][]domain.Chunk   // "source\x00filePath" → chunks
 	tracked map[string]map[string]int64 // source → filePath → mtime
 
-	vecAvailable bool
-	ftsAvailable bool
+	vecAvailable     bool
+	ftsAvailable     bool
+	indexingProgress []domain.IndexingProgress
 
 	errGetChunks    error
 	errCount        error
@@ -133,3 +134,7 @@ func (m *mockChunkStore) AllSources() ([]string, error) {
 
 func (m *mockChunkStore) VecAvailable() bool { return m.vecAvailable }
 func (m *mockChunkStore) FTSAvailable() bool { return m.ftsAvailable }
+
+func (m *mockChunkStore) GetIndexingProgress() ([]domain.IndexingProgress, error) {
+	return m.indexingProgress, nil
+}

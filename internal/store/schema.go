@@ -41,6 +41,13 @@ CREATE TABLE IF NOT EXISTS embedding_meta (
 );
 `
 
+const indexingProgressDDL = `CREATE TABLE IF NOT EXISTS indexing_progress (
+    folder     TEXT PRIMARY KEY NOT NULL,
+    total      INTEGER NOT NULL,
+    processed  INTEGER NOT NULL DEFAULT 0,
+    started_at INTEGER NOT NULL
+)`
+
 func vec0DDL(dims int) string {
 	return `CREATE VIRTUAL TABLE IF NOT EXISTS vec_embeddings USING vec0(embedding float[` + strconv.Itoa(dims) + `] distance_metric=cosine)`
 }

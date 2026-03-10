@@ -37,6 +37,23 @@ func registerStatusResource(server *gomcp.Server, statusSvc *app.StatusService) 
 		}
 		output["folders"] = folders
 
+		if len(status.Indexing) > 0 {
+			indexing := make([]map[string]any, 0, len(status.Indexing))
+			for _, p := range status.Indexing {
+				pct := 0.0
+				if p.Total > 0 {
+					pct = float64(p.Processed) / float64(p.Total) * 100
+				}
+				indexing = append(indexing, map[string]any{
+					"folder":     p.Folder,
+					"total":      p.Total,
+					"processed":  p.Processed,
+					"percentage": pct,
+				})
+			}
+			output["indexing"] = indexing
+		}
+
 		data, err := json.MarshalIndent(output, "", "  ")
 		if err != nil {
 			return nil, fmt.Errorf("marshal status: %w", err)

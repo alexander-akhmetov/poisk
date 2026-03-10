@@ -192,9 +192,10 @@ func cmdStatus() error {
 	status := d.StatusSvc.GetStatus()
 
 	output := struct {
-		Folders      []FolderStatusJSON `json:"folders"`
-		VecAvailable bool               `json:"vec_available"`
-		FTSAvailable bool               `json:"fts_available"`
+		Folders      []FolderStatusJSON      `json:"folders"`
+		VecAvailable bool                    `json:"vec_available"`
+		FTSAvailable bool                    `json:"fts_available"`
+		Indexing     []IndexingProgressJSON  `json:"indexing,omitempty"`
 	}{
 		VecAvailable: status.VecAvailable,
 		FTSAvailable: status.FTSAvailable,
@@ -205,6 +206,18 @@ func cmdStatus() error {
 			Description: f.Description,
 			Files:       f.Files,
 			Chunks:      f.Chunks,
+		})
+	}
+	for _, p := range status.Indexing {
+		pct := 0.0
+		if p.Total > 0 {
+			pct = float64(p.Processed) / float64(p.Total) * 100
+		}
+		output.Indexing = append(output.Indexing, IndexingProgressJSON{
+			Folder:     p.Folder,
+			Total:      p.Total,
+			Processed:  p.Processed,
+			Percentage: pct,
 		})
 	}
 
@@ -219,4 +232,12 @@ type FolderStatusJSON struct {
 	Description string `json:"description"`
 	Files       int    `json:"files"`
 	Chunks      int    `json:"chunks"`
+}
+
+// IndexingProgressJSON is the JSON representation of active indexing progress.
+type IndexingProgressJSON struct {
+	Folder     string  `json:"folder"`
+	Total      int     `json:"total"`
+	Processed  int     `json:"processed"`
+	Percentage float64 `json:"percentage"`
 }

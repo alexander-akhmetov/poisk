@@ -57,8 +57,16 @@ type FolderStatus struct {
 	Context     map[string]string
 }
 
+type IndexingProgress struct {
+	Folder    string
+	Total     int
+	Processed int
+	StartedAt int64
+}
+
 type IndexStatus struct {
 	VecAvailable bool
 	FTSAvailable bool
 	Folders      []FolderStatus
+	Indexing      []IndexingProgress
 }

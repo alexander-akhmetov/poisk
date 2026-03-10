@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/alexander-akhmetov/poisk/internal/chunk"
 	"github.com/alexander-akhmetov/poisk/internal/config"
@@ -134,6 +135,10 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 
 	slog.Info("indexing folder", "folder", folder, "files", len(files))
 
+	if err := ix.store.SetIndexingProgress(folder, len(files), 0, time.Now().Unix()); err != nil {
+		slog.Error("set indexing progress failed", "folder", folder, "error", err)
+	}
+
 	// Process changed files
 	for i, filePath := range files {
 		select {
@@ -157,6 +162,14 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 
 		slog.Info("processing file", "file", filePath, "progress", fmt.Sprintf("%d/%d", i+1, len(files)))
 		ix.processFile(ctx, folder, filePath, mtime, &stats)
+
+		if err := ix.store.UpdateIndexingProcessed(folder, i+1); err != nil {
+			slog.Error("update indexing progress failed", "folder", folder, "error", err)
+		}
+	}
+
+	if err := ix.store.ClearIndexingProgress(folder); err != nil {
+		slog.Error("clear indexing progress failed", "folder", folder, "error", err)
 	}
 
 	slog.Info("folder done", "folder", folder, "processed", stats.FilesProcessed, "skipped", stats.FilesSkipped, "chunks", stats.ChunksCreated, "errors", stats.Errors)

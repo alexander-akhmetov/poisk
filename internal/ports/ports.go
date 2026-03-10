@@ -27,4 +27,7 @@ type ChunkStore interface {
 	// Index status.
 	VecAvailable() bool
 	FTSAvailable() bool
+
+	// Indexing progress (written by indexer, read by status).
+	GetIndexingProgress() ([]domain.IndexingProgress, error)
 }

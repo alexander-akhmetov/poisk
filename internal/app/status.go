@@ -42,5 +42,11 @@ func (s *StatusService) GetStatus() domain.IndexStatus {
 		}
 		status.Folders = append(status.Folders, fs)
 	}
+	progress, err := s.store.GetIndexingProgress()
+	if err != nil {
+		slog.Error("status: get indexing progress failed", "error", err)
+	}
+	status.Indexing = progress
+
 	return status
 }
