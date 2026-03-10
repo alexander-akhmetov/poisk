@@ -88,6 +88,9 @@ func (s *Store) initSchema() error {
 		}
 	}
 
+	// Drop legacy embedding blob column if it exists.
+	s.dropEmbeddingColumn()
+
 	// vec0 — drop and recreate if dimensions changed
 	s.initVec0()
 
@@ -165,6 +168,18 @@ func (s *Store) backfillFTS5() {
 		FROM embeddings`)
 	if err != nil {
 		slog.Warn("FTS5 backfill failed", "error", err)
+	}
+}
+
+func (s *Store) dropEmbeddingColumn() {
+	var count int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('embeddings') WHERE name = 'embedding'").Scan(&count)
+	if err != nil || count == 0 {
+		return
+	}
+	slog.Info("dropping legacy embedding blob column")
+	if _, err := s.db.Exec("ALTER TABLE embeddings DROP COLUMN embedding"); err != nil {
+		slog.Warn("failed to drop embedding column", "error", err)
 	}
 }
 

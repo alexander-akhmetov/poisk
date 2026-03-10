@@ -24,7 +24,6 @@ CREATE TABLE IF NOT EXISTS embeddings (
     file_path  TEXT NOT NULL,
     line_num   INTEGER NOT NULL,
     chunk_text TEXT NOT NULL,
-    embedding  BLOB NOT NULL,
     folder     TEXT,
     end_line   INTEGER NOT NULL DEFAULT 0,
     language   TEXT NOT NULL DEFAULT '',

@@ -48,7 +48,7 @@ func (s *Store) InsertEntries(source, filePath string, entries []Entry) error {
 	}
 
 	insertStmt, err := tx.Prepare(
-		"INSERT INTO embeddings (source, file_path, line_num, chunk_text, embedding, folder, end_line, language, chunk_kind, symbol) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"INSERT INTO embeddings (source, file_path, line_num, chunk_text, folder, end_line, language, chunk_kind, symbol) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
 	)
 	if err != nil {
 		return fmt.Errorf("prepare insert: %w", err)
@@ -57,7 +57,7 @@ func (s *Store) InsertEntries(source, filePath string, entries []Entry) error {
 
 	for _, e := range entries {
 		blob := Float32sToBlob(e.Embedding)
-		res, err := insertStmt.Exec(source, filePath, e.LineNum, e.Text, blob, e.Folder, e.EndLine, e.Language, e.Kind, e.Symbol)
+		res, err := insertStmt.Exec(source, filePath, e.LineNum, e.Text, e.Folder, e.EndLine, e.Language, e.Kind, e.Symbol)
 		if err != nil {
 			return fmt.Errorf("insert entry: %w", err)
 		}
