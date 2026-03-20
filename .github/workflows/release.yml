@@ -4,11 +4,11 @@ on:
   push:
     tags: ["v*"]
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   build:
+    permissions: {}
     strategy:
       matrix:
         include:
@@ -20,16 +20,18 @@ jobs:
             goarch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
         with:
           go-version-file: go.mod
+          cache: false
 
       - name: Install GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6
         with:
           install-only: true
 
@@ -45,7 +47,7 @@ jobs:
           tar czf ../../poisk_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz poisk
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: poisk_${{ matrix.goos }}_${{ matrix.goarch }}
           path: poisk_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz
@@ -53,20 +55,25 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Generate changelog
         id: changelog
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
           PREV_TAG=$(git tag --sort=-v:refname | head -2 | tail -1)
-          if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "${{ github.ref_name }}" ]; then
+          if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "$REF_NAME" ]; then
             # First release — use all commits
             RANGE="HEAD"
           else
-            RANGE="${PREV_TAG}..${{ github.ref_name }}"
+            RANGE="${PREV_TAG}..${REF_NAME}"
           fi
           {
             echo 'CHANGELOG<<EOF'
@@ -76,13 +83,18 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: artifacts/
           merge-multiple: true
 
       - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/*.tar.gz
-          body: ${{ steps.changelog.outputs.CHANGELOG }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REF_NAME: ${{ github.ref_name }}
+          CHANGELOG: ${{ steps.changelog.outputs.CHANGELOG }}
+        run: |
+          gh release create "$REF_NAME" \
+            --title "$REF_NAME" \
+            --notes "$CHANGELOG" \
+            artifacts/*.tar.gz
