@@ -274,11 +274,18 @@ func queryFTS(s *store.Store, ftsQuery string, limit int, folders []string) ([]R
 		var r Result
 		var rank float64
 		var lineStr, endLineStr string
-		if err := rows.Scan(&r.FilePath, &lineStr, &endLineStr, &r.Text, &rank, &r.Folder, &r.Language, &r.Kind, &r.Symbol); err != nil {
+		var err error
+		if err = rows.Scan(&r.FilePath, &lineStr, &endLineStr, &r.Text, &rank, &r.Folder, &r.Language, &r.Kind, &r.Symbol); err != nil {
 			return nil, err
 		}
-		r.LineNum, _ = strconv.Atoi(lineStr)
-		r.EndLine, _ = strconv.Atoi(endLineStr)
+		r.LineNum, err = strconv.Atoi(lineStr)
+		if err != nil {
+			return nil, fmt.Errorf("parsing line_num %q for %s: %w", lineStr, r.FilePath, err)
+		}
+		r.EndLine, err = strconv.Atoi(endLineStr)
+		if err != nil {
+			return nil, fmt.Errorf("parsing end_line %q for %s: %w", endLineStr, r.FilePath, err)
+		}
 		ar := math.Abs(rank)
 		r.Score = ar / (1.0 + ar)
 		results = append(results, r)
