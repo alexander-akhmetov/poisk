@@ -59,15 +59,15 @@ func cmdIndex() error {
 	}
 	defer d.Close()
 
-	if !watch {
-		return indexOnce(d)
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	if !watch {
+		return indexOnce(ctx, d)
+	}
+
 	slog.Info("watch mode started", "interval", interval)
-	if err := indexOnce(d); err != nil {
+	if err := indexOnce(ctx, d); err != nil {
 		return err
 	}
 
@@ -79,15 +79,15 @@ func cmdIndex() error {
 			slog.Info("watch mode stopped")
 			return nil
 		case <-ticker.C:
-			if err := indexOnce(d); err != nil {
+			if err := indexOnce(ctx, d); err != nil {
 				slog.Error("indexing cycle failed", "error", err)
 			}
 		}
 	}
 }
 
-func indexOnce(d *deps) error {
-	stats, err := d.IndexSvc.IndexAll(context.Background())
+func indexOnce(ctx context.Context, d *deps) error {
+	stats, err := d.IndexSvc.IndexAll(ctx)
 	if err != nil {
 		return fmt.Errorf("indexing: %w", err)
 	}
