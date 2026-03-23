@@ -1,47 +1,51 @@
 package search
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/alexander-akhmetov/poisk/internal/domain"
+)
 
 func TestFilterMinScore(t *testing.T) {
 	tests := []struct {
 		name     string
-		results  []Result
+		results  []domain.SearchResult
 		minScore float64
 		wantLen  int
 	}{
 		{
 			name:     "disabled when zero",
-			results:  []Result{{Score: 0.001}, {Score: 0.0001}},
+			results:  []domain.SearchResult{{Score: 0.001}, {Score: 0.0001}},
 			minScore: 0,
 			wantLen:  2,
 		},
 		{
 			name:     "filters below threshold",
-			results:  []Result{{Score: 0.05}, {Score: 0.03}, {Score: 0.01}, {Score: 0.003}},
+			results:  []domain.SearchResult{{Score: 0.05}, {Score: 0.03}, {Score: 0.01}, {Score: 0.003}},
 			minScore: 0.005,
 			wantLen:  3,
 		},
 		{
 			name:     "exact threshold passes",
-			results:  []Result{{Score: 0.005}, {Score: 0.005}, {Score: 0.001}},
+			results:  []domain.SearchResult{{Score: 0.005}, {Score: 0.005}, {Score: 0.001}},
 			minScore: 0.005,
 			wantLen:  2,
 		},
 		{
 			name:     "all filtered returns empty",
-			results:  []Result{{Score: 0.001}, {Score: 0.0005}},
+			results:  []domain.SearchResult{{Score: 0.001}, {Score: 0.0005}},
 			minScore: 0.01,
 			wantLen:  0,
 		},
 		{
 			name:     "empty input unchanged",
-			results:  []Result{},
+			results:  []domain.SearchResult{},
 			minScore: 0.01,
 			wantLen:  0,
 		},
 		{
 			name:     "negative threshold disabled",
-			results:  []Result{{Score: 0.001}},
+			results:  []domain.SearchResult{{Score: 0.001}},
 			minScore: -1,
 			wantLen:  1,
 		},

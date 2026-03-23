@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/alexander-akhmetov/poisk/internal/config"
+	"github.com/alexander-akhmetov/poisk/internal/domain"
 	"github.com/alexander-akhmetov/poisk/internal/embed"
 	"github.com/alexander-akhmetov/poisk/internal/index"
 	"github.com/alexander-akhmetov/poisk/internal/store"
@@ -98,13 +99,13 @@ The system uses a layered architecture with handlers, services, and repositories
 		topK    int
 		folders []string
 		setup   func()
-		check   func(t *testing.T, results []Result, err error)
+		check   func(t *testing.T, results []domain.SearchResult, err error)
 	}{
 		{
 			name:  "hybrid_basic",
 			query: "HandleRequest",
 			topK:  5,
-			check: func(t *testing.T, results []Result, err error) {
+			check: func(t *testing.T, results []domain.SearchResult, err error) {
 				t.Helper()
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -118,7 +119,7 @@ The system uses a layered architecture with handlers, services, and repositories
 			name:  "fts_only",
 			query: "lex:uniquetoken",
 			topK:  5,
-			check: func(t *testing.T, results []Result, err error) {
+			check: func(t *testing.T, results []domain.SearchResult, err error) {
 				t.Helper()
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -137,7 +138,7 @@ The system uses a layered architecture with handlers, services, and repositories
 			name:  "vec_only",
 			query: "vec:process data items",
 			topK:  5,
-			check: func(t *testing.T, results []Result, err error) {
+			check: func(t *testing.T, results []domain.SearchResult, err error) {
 				t.Helper()
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -151,7 +152,7 @@ The system uses a layered architecture with handlers, services, and repositories
 			name:  "pipe_composition",
 			query: "lex:HandleRequest | vec:process data",
 			topK:  10,
-			check: func(t *testing.T, results []Result, err error) {
+			check: func(t *testing.T, results []domain.SearchResult, err error) {
 				t.Helper()
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -165,7 +166,7 @@ The system uses a layered architecture with handlers, services, and repositories
 			name:  "empty_query",
 			query: "",
 			topK:  5,
-			check: func(t *testing.T, results []Result, err error) {
+			check: func(t *testing.T, results []domain.SearchResult, err error) {
 				t.Helper()
 				if err != nil {
 					t.Errorf("expected nil error for empty query, got %v", err)
@@ -179,7 +180,7 @@ The system uses a layered architecture with handlers, services, and repositories
 			name:  "topK_respected",
 			query: "function",
 			topK:  1,
-			check: func(t *testing.T, results []Result, err error) {
+			check: func(t *testing.T, results []domain.SearchResult, err error) {
 				t.Helper()
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -194,7 +195,7 @@ The system uses a layered architecture with handlers, services, and repositories
 			query:   "lex:process",
 			topK:    5,
 			folders: []string{dir2},
-			check: func(t *testing.T, results []Result, err error) {
+			check: func(t *testing.T, results []domain.SearchResult, err error) {
 				t.Helper()
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -213,7 +214,7 @@ The system uses a layered architecture with handlers, services, and repositories
 			name:  "lang_filter",
 			query: "lex:process lang:python",
 			topK:  5,
-			check: func(t *testing.T, results []Result, err error) {
+			check: func(t *testing.T, results []domain.SearchResult, err error) {
 				t.Helper()
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -235,7 +236,7 @@ The system uses a layered architecture with handlers, services, and repositories
 			setup: func() {
 				cfg.Search.MinScore = 999
 			},
-			check: func(t *testing.T, results []Result, err error) {
+			check: func(t *testing.T, results []domain.SearchResult, err error) {
 				t.Helper()
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)

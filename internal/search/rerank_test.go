@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/alexander-akhmetov/poisk/internal/domain"
 	"github.com/alexander-akhmetov/poisk/internal/llm"
 )
 
@@ -69,7 +70,7 @@ func TestRerankResults(t *testing.T) {
 	defer server.Close()
 
 	client := llm.NewClient(server.URL, "", "test")
-	results := []Result{
+	results := []domain.SearchResult{
 		{FilePath: "a.go", LineNum: 1, Text: "func A()", Score: 0.9},
 		{FilePath: "b.go", LineNum: 1, Text: "func B()", Score: 0.8},
 		{FilePath: "c.go", LineNum: 1, Text: "func C()", Score: 0.7},
@@ -95,7 +96,7 @@ func TestRerankTopN(t *testing.T) {
 	defer server.Close()
 
 	client := llm.NewClient(server.URL, "", "test")
-	results := []Result{
+	results := []domain.SearchResult{
 		{FilePath: "a.go", LineNum: 1, Text: "func A()", Score: 0.9},
 		{FilePath: "b.go", LineNum: 1, Text: "func B()", Score: 0.8},
 		{FilePath: "c.go", LineNum: 1, Text: "func C()", Score: 0.7},
@@ -118,7 +119,7 @@ func TestRerankFallbackOnError(t *testing.T) {
 	defer server.Close()
 
 	client := llm.NewClient(server.URL, "", "test")
-	original := []Result{
+	original := []domain.SearchResult{
 		{FilePath: "a.go", LineNum: 1, Score: 0.9},
 		{FilePath: "b.go", LineNum: 1, Score: 0.8},
 	}
@@ -156,7 +157,7 @@ func TestRerankFallbackOnBadParse(t *testing.T) {
 	defer server.Close()
 
 	client := llm.NewClient(server.URL, "", "test")
-	original := []Result{
+	original := []domain.SearchResult{
 		{FilePath: "a.go", LineNum: 1, Score: 0.9},
 		{FilePath: "b.go", LineNum: 1, Score: 0.8},
 	}
@@ -175,7 +176,7 @@ func TestRerankFallbackOnWrongCount(t *testing.T) {
 	defer server.Close()
 
 	client := llm.NewClient(server.URL, "", "test")
-	original := []Result{
+	original := []domain.SearchResult{
 		{FilePath: "a.go", LineNum: 1, Score: 0.9},
 		{FilePath: "b.go", LineNum: 1, Score: 0.8},
 	}
@@ -246,7 +247,7 @@ func TestRerankStableOrderOnTiedScores(t *testing.T) {
 	defer server.Close()
 
 	client := llm.NewClient(server.URL, "", "test")
-	original := []Result{
+	original := []domain.SearchResult{
 		{FilePath: "a.go", LineNum: 1, Score: 0.5},
 		{FilePath: "b.go", LineNum: 1, Score: 0.5},
 		{FilePath: "c.go", LineNum: 1, Score: 0.5},

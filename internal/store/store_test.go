@@ -102,11 +102,11 @@ func TestTrackedFiles(t *testing.T) {
 func TestInsertAndCount(t *testing.T) {
 	s := openTestStore(t)
 
-	entries := []Entry{
-		{LineNum: 1, Text: "hello", Embedding: []float32{1, 0, 0}},
-		{LineNum: 5, Text: "world", Embedding: []float32{0, 1, 0}},
+	entries := []domain.ChunkWithEmbedding{
+		{Chunk: domain.Chunk{LineNum: 1, Text: "hello"}, Embedding: []float32{1, 0, 0}},
+		{Chunk: domain.Chunk{LineNum: 5, Text: "world"}, Embedding: []float32{0, 1, 0}},
 	}
-	if err := s.InsertEntries("src", "test.go", entries); err != nil {
+	if err := s.InsertChunks("src", "test.go", entries); err != nil {
 		t.Fatal(err)
 	}
 
@@ -116,7 +116,7 @@ func TestInsertAndCount(t *testing.T) {
 	}
 
 	// Re-insert replaces
-	if err := s.InsertEntries("src", "test.go", entries[:1]); err != nil {
+	if err := s.InsertChunks("src", "test.go", entries[:1]); err != nil {
 		t.Fatal(err)
 	}
 	count, _ = s.Count("src")
@@ -156,8 +156,8 @@ func TestClearSource(t *testing.T) {
 	if err := s.SetFileMtime("src", "f.go", 111); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.InsertEntries("src", "f.go", []Entry{
-		{LineNum: 1, Text: "test", Embedding: []float32{1, 0, 0}},
+	if err := s.InsertChunks("src", "f.go", []domain.ChunkWithEmbedding{
+		{Chunk: domain.Chunk{LineNum: 1, Text: "test"}, Embedding: []float32{1, 0, 0}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -218,19 +218,19 @@ func TestAllSources(t *testing.T) {
 	}
 }
 
-func TestGetEntriesByPath(t *testing.T) {
+func TestGetChunksByPath(t *testing.T) {
 	s := openTestStore(t)
 
-	entries := []Entry{
-		{LineNum: 10, EndLine: 15, Text: "func foo()", Embedding: []float32{1, 0, 0}, Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "foo"},
-		{LineNum: 1, EndLine: 5, Text: "package main", Embedding: []float32{0, 1, 0}, Folder: "src", Language: "go", Kind: "package_clause", Symbol: "main"},
-		{LineNum: 20, EndLine: 25, Text: "func bar()", Embedding: []float32{0, 0, 1}, Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "bar"},
+	entries := []domain.ChunkWithEmbedding{
+		{Chunk: domain.Chunk{LineNum: 10, EndLine: 15, Text: "func foo()", Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "foo"}, Embedding: []float32{1, 0, 0}},
+		{Chunk: domain.Chunk{LineNum: 1, EndLine: 5, Text: "package main", Folder: "src", Language: "go", Kind: "package_clause", Symbol: "main"}, Embedding: []float32{0, 1, 0}},
+		{Chunk: domain.Chunk{LineNum: 20, EndLine: 25, Text: "func bar()", Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "bar"}, Embedding: []float32{0, 0, 1}},
 	}
-	if err := s.InsertEntries("src", "main.go", entries); err != nil {
+	if err := s.InsertChunks("src", "main.go", entries); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := s.GetEntriesByPath("src", "main.go")
+	got, err := s.GetChunksByPath("src", "main.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,19 +241,13 @@ func TestGetEntriesByPath(t *testing.T) {
 	if got[0].LineNum != 1 || got[1].LineNum != 10 || got[2].LineNum != 20 {
 		t.Fatalf("unexpected order: %d, %d, %d", got[0].LineNum, got[1].LineNum, got[2].LineNum)
 	}
-	// Embedding should be nil (not hydrated)
-	for i, e := range got {
-		if e.Embedding != nil {
-			t.Fatalf("entry %d: expected nil embedding", i)
-		}
-	}
 	// Metadata should be preserved
 	if got[0].Symbol != "main" || got[1].Symbol != "foo" || got[2].Symbol != "bar" {
 		t.Fatalf("symbols: %q, %q, %q", got[0].Symbol, got[1].Symbol, got[2].Symbol)
 	}
 
 	// Different source returns empty
-	got, err = s.GetEntriesByPath("other", "main.go")
+	got, err = s.GetChunksByPath("other", "main.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,8 +301,8 @@ func TestSchemaVersionMigrationDropsOldData(t *testing.T) {
 	dbPath := filepath.Join(dir, "migrate.db")
 
 	s := openTestStoreAt(t, dbPath)
-	if err := s.InsertEntries("src", "main.go", []Entry{
-		{LineNum: 1, EndLine: 1, Text: "func old()", Embedding: []float32{1, 0, 0}, Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "old"},
+	if err := s.InsertChunks("src", "main.go", []domain.ChunkWithEmbedding{
+		{Chunk: domain.Chunk{LineNum: 1, EndLine: 1, Text: "func old()", Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "old"}, Embedding: []float32{1, 0, 0}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -351,8 +345,8 @@ func TestReopenWithSameVersionDoesNotDropData(t *testing.T) {
 	dbPath := filepath.Join(dir, "reopen.db")
 
 	s1 := openTestStoreAt(t, dbPath)
-	if err := s1.InsertEntries("src", "main.go", []Entry{
-		{LineNum: 1, EndLine: 1, Text: "func keep()", Embedding: []float32{1, 0, 0}, Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "keep"},
+	if err := s1.InsertChunks("src", "main.go", []domain.ChunkWithEmbedding{
+		{Chunk: domain.Chunk{LineNum: 1, EndLine: 1, Text: "func keep()", Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "keep"}, Embedding: []float32{1, 0, 0}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -404,8 +398,8 @@ func TestClearSourceAtomicity(t *testing.T) {
 	if err := s.SetFileMtime("src", "a.go", 100); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.InsertEntries("src", "a.go", []Entry{
-		{LineNum: 1, Text: "func A()", Embedding: []float32{1, 0, 0}},
+	if err := s.InsertChunks("src", "a.go", []domain.ChunkWithEmbedding{
+		{Chunk: domain.Chunk{LineNum: 1, Text: "func A()"}, Embedding: []float32{1, 0, 0}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -455,13 +449,13 @@ func TestDeleteFileAtomicity(t *testing.T) {
 	if err := s.SetFileMtime("src", "b.go", 200); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.InsertEntries("src", "a.go", []Entry{
-		{LineNum: 1, Text: "func A()", Embedding: []float32{1, 0, 0}},
+	if err := s.InsertChunks("src", "a.go", []domain.ChunkWithEmbedding{
+		{Chunk: domain.Chunk{LineNum: 1, Text: "func A()"}, Embedding: []float32{1, 0, 0}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.InsertEntries("src", "b.go", []Entry{
-		{LineNum: 1, Text: "func B()", Embedding: []float32{0, 1, 0}},
+	if err := s.InsertChunks("src", "b.go", []domain.ChunkWithEmbedding{
+		{Chunk: domain.Chunk{LineNum: 1, Text: "func B()"}, Embedding: []float32{0, 1, 0}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -622,8 +616,8 @@ func TestVec0DimensionChange(t *testing.T) {
 		s1.Close()
 		t.Skip("vec0 not available")
 	}
-	if err := s1.InsertEntries("src", "main.go", []Entry{
-		{LineNum: 1, EndLine: 5, Text: "func A()", Embedding: []float32{1, 0, 0}, Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "A"},
+	if err := s1.InsertChunks("src", "main.go", []domain.ChunkWithEmbedding{
+		{Chunk: domain.Chunk{LineNum: 1, EndLine: 5, Text: "func A()", Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "A"}, Embedding: []float32{1, 0, 0}},
 	}); err != nil {
 		t.Fatalf("insert dims=3: %v", err)
 	}
@@ -684,16 +678,18 @@ func TestFTSMetadataColumnsAreIndexedAndSearchable(t *testing.T) {
 		t.Fatalf("symbol must be indexed in chunks_fts: %s", ddl)
 	}
 
-	if err := s.InsertEntries("src", "main.go", []Entry{
+	if err := s.InsertChunks("src", "main.go", []domain.ChunkWithEmbedding{
 		{
-			LineNum:   10,
-			EndLine:   20,
-			Text:      "func FetchUser(id string) string { return id }",
+			Chunk: domain.Chunk{
+				LineNum:  10,
+				EndLine:  20,
+				Text:     "func FetchUser(id string) string { return id }",
+				Folder:   "src",
+				Language: "go",
+				Kind:     "function_declaration",
+				Symbol:   "FetchUser",
+			},
 			Embedding: []float32{1, 0, 0},
-			Folder:    "src",
-			Language:  "go",
-			Kind:      "function_declaration",
-			Symbol:    "FetchUser",
 		},
 	}); err != nil {
 		t.Fatal(err)

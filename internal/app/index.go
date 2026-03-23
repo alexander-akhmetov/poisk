@@ -20,19 +20,11 @@ func NewIndexService(indexer *index.Indexer, store ports.ChunkStore, cfg *config
 }
 
 func (s *IndexService) IndexAll(ctx context.Context) ([]domain.FolderStats, error) {
-	stats, err := s.indexer.IndexAll(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return convertStats(stats), nil
+	return s.indexer.IndexAll(ctx)
 }
 
 func (s *IndexService) IndexFolder(ctx context.Context, folder string) (domain.FolderStats, error) {
-	stats, err := s.indexer.IndexFolder(ctx, folder)
-	if err != nil {
-		return domain.FolderStats{}, err
-	}
-	return convertStat(stats), nil
+	return s.indexer.IndexFolder(ctx, folder)
 }
 
 func (s *IndexService) ValidateFolder(folder string) bool {
@@ -55,23 +47,4 @@ func (s *IndexService) ClearAllSources() error {
 		}
 	}
 	return nil
-}
-
-func convertStats(stats []index.FolderStats) []domain.FolderStats {
-	result := make([]domain.FolderStats, len(stats))
-	for i, s := range stats {
-		result[i] = convertStat(s)
-	}
-	return result
-}
-
-func convertStat(s index.FolderStats) domain.FolderStats {
-	return domain.FolderStats{
-		Folder:                 s.Folder,
-		FilesProcessed:         s.FilesProcessed,
-		FilesSkipped:           s.FilesSkipped,
-		ChunksCreated:          s.ChunksCreated,
-		Errors:                 s.Errors,
-		FilesSkippedParseError: s.FilesSkippedParseError,
-	}
 }

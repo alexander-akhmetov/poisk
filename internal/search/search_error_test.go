@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/alexander-akhmetov/poisk/internal/config"
+	"github.com/alexander-akhmetov/poisk/internal/domain"
 	"github.com/alexander-akhmetov/poisk/internal/embed"
 	"github.com/alexander-akhmetov/poisk/internal/store"
 )
@@ -33,14 +34,16 @@ func TestSearchReturnsPartialResultsWhenVecFails(t *testing.T) {
 		t.Skip("FTS5 not available")
 	}
 
-	if err := s.InsertEntries("repo", "target.go", []store.Entry{
+	if err := s.InsertChunks("repo", "target.go", []domain.ChunkWithEmbedding{
 		{
-			LineNum:   10,
-			EndLine:   20,
-			Text:      "binary search algorithm implementation details",
+			Chunk: domain.Chunk{
+				LineNum:  10,
+				EndLine:  20,
+				Text:     "binary search algorithm implementation details",
+				Folder:   "repo",
+				Language: "go",
+			},
 			Embedding: []float32{1, 0, 0},
-			Folder:    "repo",
-			Language:  "go",
 		},
 	}); err != nil {
 		t.Fatalf("insert fixture entry: %v", err)

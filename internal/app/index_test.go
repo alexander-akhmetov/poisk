@@ -104,51 +104,6 @@ func TestClearSource(t *testing.T) {
 	}
 }
 
-func TestConvertStats(t *testing.T) {
-	in := []index.FolderStats{
-		{Folder: "/a", FilesProcessed: 1},
-		{Folder: "/b", FilesProcessed: 2},
-	}
-	out := convertStats(in)
-	if len(out) != 2 {
-		t.Fatalf("got %d, want 2", len(out))
-	}
-	if out[0].Folder != "/a" || out[1].Folder != "/b" {
-		t.Errorf("folders = %q, %q", out[0].Folder, out[1].Folder)
-	}
-}
-
-func TestConvertStat(t *testing.T) {
-	in := index.FolderStats{
-		Folder:                 "/repo",
-		FilesProcessed:         10,
-		FilesSkipped:           2,
-		ChunksCreated:          50,
-		Errors:                 1,
-		FilesSkippedParseError: 3,
-	}
-	out := convertStat(in)
-
-	if out.Folder != in.Folder {
-		t.Errorf("Folder = %q, want %q", out.Folder, in.Folder)
-	}
-	if out.FilesProcessed != in.FilesProcessed {
-		t.Errorf("FilesProcessed = %d, want %d", out.FilesProcessed, in.FilesProcessed)
-	}
-	if out.FilesSkipped != in.FilesSkipped {
-		t.Errorf("FilesSkipped = %d, want %d", out.FilesSkipped, in.FilesSkipped)
-	}
-	if out.ChunksCreated != in.ChunksCreated {
-		t.Errorf("ChunksCreated = %d, want %d", out.ChunksCreated, in.ChunksCreated)
-	}
-	if out.Errors != in.Errors {
-		t.Errorf("Errors = %d, want %d", out.Errors, in.Errors)
-	}
-	if out.FilesSkippedParseError != in.FilesSkippedParseError {
-		t.Errorf("FilesSkippedParseError = %d, want %d", out.FilesSkippedParseError, in.FilesSkippedParseError)
-	}
-}
-
 func TestIndexServiceIntegration(t *testing.T) {
 	dims := 256
 

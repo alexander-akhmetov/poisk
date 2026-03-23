@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/alexander-akhmetov/poisk/internal/domain"
 	"github.com/alexander-akhmetov/poisk/internal/store"
 )
 
@@ -187,7 +188,7 @@ func combineFTSQuery(textClause, metadataClause string) string {
 // searchFTS performs staged FTS retrieval: strict AND → relaxed OR → prefix OR.
 // Each stage only runs if prior stages returned fewer results than topK.
 // Results are deduplicated across stages by filepath:line.
-func searchFTS(s *store.Store, queryText string, topK int, folders []string, filters MetadataFilters) ([]Result, error) {
+func searchFTS(s *store.Store, queryText string, topK int, folders []string, filters MetadataFilters) ([]domain.SearchResult, error) {
 	if !s.FTSAvailable() {
 		return nil, nil
 	}
@@ -198,10 +199,10 @@ func searchFTS(s *store.Store, queryText string, topK int, folders []string, fil
 	}
 
 	seen := make(map[string]bool)
-	var results []Result
+	var results []domain.SearchResult
 	metadataClause := buildMetadataClause(filters)
 
-	addResults := func(staged []Result) {
+	addResults := func(staged []domain.SearchResult) {
 		for _, r := range staged {
 			key := resultKey(r)
 			if !seen[key] {
@@ -248,11 +249,11 @@ func searchFTS(s *store.Store, queryText string, topK int, folders []string, fil
 	return results, nil
 }
 
-func resultKey(r Result) string {
+func resultKey(r domain.SearchResult) string {
 	return fmt.Sprintf("%s:%d", r.FilePath, r.LineNum)
 }
 
-func queryFTS(s *store.Store, ftsQuery string, limit int, folders []string) ([]Result, error) {
+func queryFTS(s *store.Store, ftsQuery string, limit int, folders []string) ([]domain.SearchResult, error) {
 	query := `SELECT file_path, line_num, end_line, chunk_text, bm25(chunks_fts) AS rank, folder, language, chunk_kind, symbol
 		FROM chunks_fts
 		WHERE chunks_fts MATCH ?`
@@ -269,9 +270,9 @@ func queryFTS(s *store.Store, ftsQuery string, limit int, folders []string) ([]R
 	}
 	defer rows.Close()
 
-	var results []Result
+	var results []domain.SearchResult
 	for rows.Next() {
-		var r Result
+		var r domain.SearchResult
 		var rank float64
 		var lineStr, endLineStr string
 		if err := rows.Scan(&r.FilePath, &lineStr, &endLineStr, &r.Text, &rank, &r.Folder, &r.Language, &r.Kind, &r.Symbol); err != nil {

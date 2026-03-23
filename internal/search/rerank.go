@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/alexander-akhmetov/poisk/internal/domain"
 	"github.com/alexander-akhmetov/poisk/internal/llm"
 )
 
@@ -37,7 +38,7 @@ var scoreAfterSeparatorPattern = regexp.MustCompile(`[:=]\s*(-?\d+(?:\.\d+)?)`)
 var countPrefixPattern = regexp.MustCompile(`(?i)^\s*\d+(?:\.\d+)?\s+(?:doc|docs|document|documents|item|items|result|results)\b`)
 var numberedCSVItemPattern = regexp.MustCompile(`^\s*\d+\s*[\.\):\-]\s*(-?\d+(?:\.\d+)?)`)
 
-func rerankResults(ctx context.Context, client *llm.Client, query string, results []Result, topN int, blendCfg rerankBlendConfig) []Result {
+func rerankResults(ctx context.Context, client *llm.Client, query string, results []domain.SearchResult, topN int, blendCfg rerankBlendConfig) []domain.SearchResult {
 	if len(results) == 0 {
 		return results
 	}
@@ -87,7 +88,7 @@ func rerankResults(ctx context.Context, client *llm.Client, query string, result
 	}
 
 	// Re-merge reranked candidates with remaining results
-	reranked := make([]Result, 0, len(results))
+	reranked := make([]domain.SearchResult, 0, len(results))
 	reranked = append(reranked, candidates...)
 	if len(results) > topN {
 		reranked = append(reranked, results[topN:]...)

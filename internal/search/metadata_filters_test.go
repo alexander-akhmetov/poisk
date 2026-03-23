@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/alexander-akhmetov/poisk/internal/domain"
 	"github.com/alexander-akhmetov/poisk/internal/store"
 )
 
@@ -18,36 +19,18 @@ func TestSearchFTSMetadataFilters(t *testing.T) {
 		t.Skip("FTS5 not available")
 	}
 
-	if err := s.InsertEntries("src", "main.go", []store.Entry{
+	if err := s.InsertChunks("src", "main.go", []domain.ChunkWithEmbedding{
 		{
-			LineNum:   10,
-			EndLine:   20,
-			Text:      "retry with exponential backoff and jitter",
+			Chunk:     domain.Chunk{LineNum: 10, EndLine: 20, Text: "retry with exponential backoff and jitter", Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "FetchUser"},
 			Embedding: []float32{1, 0, 0},
-			Folder:    "src",
-			Language:  "go",
-			Kind:      "function_declaration",
-			Symbol:    "FetchUser",
 		},
 		{
-			LineNum:   30,
-			EndLine:   40,
-			Text:      "retry with fixed delay",
+			Chunk:     domain.Chunk{LineNum: 30, EndLine: 40, Text: "retry with fixed delay", Folder: "src", Language: "python", Kind: "function_definition", Symbol: "fetch_user"},
 			Embedding: []float32{0, 1, 0},
-			Folder:    "src",
-			Language:  "python",
-			Kind:      "function_definition",
-			Symbol:    "fetch_user",
 		},
 		{
-			LineNum:   50,
-			EndLine:   60,
-			Text:      "database connection bootstrap",
+			Chunk:     domain.Chunk{LineNum: 50, EndLine: 60, Text: "database connection bootstrap", Folder: "src", Language: "rust", Kind: "function_item", Symbol: "connect_db"},
 			Embedding: []float32{0, 0, 1},
-			Folder:    "src",
-			Language:  "rust",
-			Kind:      "function_item",
-			Symbol:    "connect_db",
 		},
 	}); err != nil {
 		t.Fatalf("insert entries: %v", err)

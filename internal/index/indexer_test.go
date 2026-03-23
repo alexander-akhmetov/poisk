@@ -164,7 +164,7 @@ func TestIndexFolderUsesNanosecondMtimeForChangeDetection(t *testing.T) {
 		t.Fatalf("second index: %v", err)
 	}
 
-	entries, err := db.GetEntriesByPath(dir, filePath)
+	entries, err := db.GetChunksByPath(dir, filePath)
 	if err != nil {
 		t.Fatalf("get entries: %v", err)
 	}

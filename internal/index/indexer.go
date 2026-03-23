@@ -10,6 +10,7 @@ import (
 
 	"github.com/alexander-akhmetov/poisk/internal/chunk"
 	"github.com/alexander-akhmetov/poisk/internal/config"
+	"github.com/alexander-akhmetov/poisk/internal/domain"
 	"github.com/alexander-akhmetov/poisk/internal/embed"
 	"github.com/alexander-akhmetov/poisk/internal/store"
 )
@@ -21,24 +22,15 @@ type Indexer struct {
 	mu     sync.Mutex
 }
 
-type FolderStats struct {
-	Folder                 string
-	FilesProcessed         int
-	FilesSkipped           int
-	ChunksCreated          int
-	Errors                 int
-	FilesSkippedParseError int
-}
-
 func NewIndexer(s *store.Store, c *embed.Client, cfg *config.Config) *Indexer {
 	return &Indexer{store: s, client: c, cfg: cfg}
 }
 
-func (ix *Indexer) IndexAll(ctx context.Context) ([]FolderStats, error) {
+func (ix *Indexer) IndexAll(ctx context.Context) ([]domain.FolderStats, error) {
 	ix.mu.Lock()
 	defer ix.mu.Unlock()
 
-	var allStats []FolderStats
+	var allStats []domain.FolderStats
 	for _, f := range ix.cfg.Folders {
 		stats, err := ix.indexFolder(ctx, f.Path)
 		if err != nil {
@@ -68,14 +60,14 @@ func (ix *Indexer) IndexAll(ctx context.Context) ([]FolderStats, error) {
 	return allStats, nil
 }
 
-func (ix *Indexer) IndexFolder(ctx context.Context, folder string) (FolderStats, error) {
+func (ix *Indexer) IndexFolder(ctx context.Context, folder string) (domain.FolderStats, error) {
 	ix.mu.Lock()
 	defer ix.mu.Unlock()
 	return ix.indexFolder(ctx, folder)
 }
 
-func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats, error) {
-	stats := FolderStats{Folder: folder}
+func (ix *Indexer) indexFolder(ctx context.Context, folder string) (domain.FolderStats, error) {
+	stats := domain.FolderStats{Folder: folder}
 
 	// Check model change
 	mc, err := ix.store.ModelChanged(folder, ix.cfg.Embedding.Model, ix.cfg.Embedding.Dimensions)
@@ -182,7 +174,7 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 	return stats, nil
 }
 
-func (ix *Indexer) processFile(ctx context.Context, folder, filePath string, mtime int64, stats *FolderStats) {
+func (ix *Indexer) processFile(ctx context.Context, folder, filePath string, mtime int64, stats *domain.FolderStats) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		ix.clearStaleEntries(folder, filePath, "read_failed", err)
@@ -198,7 +190,7 @@ func (ix *Indexer) processFile(ctx context.Context, folder, filePath string, mti
 		return
 	}
 	if len(chunks) == 0 {
-		if err := ix.store.InsertEntries(folder, filePath, nil); err != nil {
+		if err := ix.store.InsertChunks(folder, filePath, nil); err != nil {
 			slog.Error("clear entries failed", "file", filePath, "error", err)
 			stats.Errors++
 			return
@@ -217,7 +209,7 @@ func (ix *Indexer) processFile(ctx context.Context, folder, filePath string, mti
 		texts[i] = c.Text
 	}
 
-	var entries []store.Entry
+	var entries []domain.ChunkWithEmbedding
 	batchSize := ix.cfg.Embedding.BatchSize
 	totalBatches := (len(texts) + batchSize - 1) / batchSize
 	for i := 0; i < len(texts); i += batchSize {
@@ -237,23 +229,25 @@ func (ix *Indexer) processFile(ctx context.Context, folder, filePath string, mti
 
 		for j, emb := range embeddings {
 			c := chunks[i+j]
-			entries = append(entries, store.Entry{
-				Source:    folder,
-				FilePath:  filePath,
-				LineNum:   c.StartLine,
-				EndLine:   c.EndLine,
-				Text:      c.Text,
+			entries = append(entries, domain.ChunkWithEmbedding{
+				Chunk: domain.Chunk{
+					Source:   folder,
+					FilePath: filePath,
+					LineNum:  c.StartLine,
+					EndLine:  c.EndLine,
+					Text:     c.Text,
+					Folder:   folder,
+					Language: c.Language,
+					Kind:     c.Kind,
+					Symbol:   c.Symbol,
+				},
 				Embedding: emb,
-				Folder:    folder,
-				Language:  c.Language,
-				Kind:      c.Kind,
-				Symbol:    c.Symbol,
 			})
 		}
 	}
 
 	if len(entries) > 0 {
-		if err := ix.store.InsertEntries(folder, filePath, entries); err != nil {
+		if err := ix.store.InsertChunks(folder, filePath, entries); err != nil {
 			slog.Error("insert failed", "file", filePath, "error", err)
 			stats.Errors++
 			return
@@ -270,7 +264,7 @@ func (ix *Indexer) processFile(ctx context.Context, folder, filePath string, mti
 
 func (ix *Indexer) clearStaleEntries(source, filePath, reason string, cause error) {
 	slog.Warn("clearing stale indexed data after indexing failure", "source", source, "file", filePath, "reason", reason, "error", cause)
-	if err := ix.store.InsertEntries(source, filePath, nil); err != nil {
+	if err := ix.store.InsertChunks(source, filePath, nil); err != nil {
 		slog.Error("failed to clear stale indexed data", "source", source, "file", filePath, "reason", reason, "error", err)
 	}
 }

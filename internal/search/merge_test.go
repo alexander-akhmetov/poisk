@@ -2,6 +2,8 @@ package search
 
 import (
 	"testing"
+
+	"github.com/alexander-akhmetov/poisk/internal/domain"
 )
 
 func TestMergeResultsBothEmpty(t *testing.T) {
@@ -12,7 +14,7 @@ func TestMergeResultsBothEmpty(t *testing.T) {
 }
 
 func TestMergeResultsVecOnly(t *testing.T) {
-	vec := []Result{
+	vec := []domain.SearchResult{
 		{FilePath: "a.go", LineNum: 1, Score: 0.9},
 		{FilePath: "b.go", LineNum: 1, Score: 0.5},
 	}
@@ -36,7 +38,7 @@ func TestMergeResultsVecOnly(t *testing.T) {
 }
 
 func TestMergeResultsFTSOnly(t *testing.T) {
-	fts := []Result{
+	fts := []domain.SearchResult{
 		{FilePath: "a.go", LineNum: 1, Score: 0.8},
 		{FilePath: "b.go", LineNum: 5, Score: 0.3},
 	}
@@ -51,11 +53,11 @@ func TestMergeResultsFTSOnly(t *testing.T) {
 }
 
 func TestMergeResultsDedup(t *testing.T) {
-	vec := []Result{
+	vec := []domain.SearchResult{
 		{FilePath: "a.go", LineNum: 10, Text: "vec text", Score: 0.9},
 		{FilePath: "b.go", LineNum: 1, Text: "vec b", Score: 0.5},
 	}
-	fts := []Result{
+	fts := []domain.SearchResult{
 		{FilePath: "a.go", LineNum: 10, Text: "fts text", Score: 0.7},
 		{FilePath: "c.go", LineNum: 1, Text: "fts c", Score: 0.3},
 	}
@@ -82,12 +84,12 @@ func TestMergeResultsRRFHandCalculated(t *testing.T) {
 	// Z: vec 1/63 + fts 1/62 = 0.015873 + 0.016129 = 0.032002
 	// W: fts 1/63 = 0.015873
 	// Order: Y > Z > X > W
-	vec := []Result{
+	vec := []domain.SearchResult{
 		{FilePath: "X", LineNum: 1},
 		{FilePath: "Y", LineNum: 1},
 		{FilePath: "Z", LineNum: 1},
 	}
-	fts := []Result{
+	fts := []domain.SearchResult{
 		{FilePath: "Y", LineNum: 1},
 		{FilePath: "Z", LineNum: 1},
 		{FilePath: "W", LineNum: 1},
@@ -112,7 +114,7 @@ func TestMergeResultsRRFHandCalculated(t *testing.T) {
 }
 
 func TestMergeResultsTopK(t *testing.T) {
-	vec := []Result{
+	vec := []domain.SearchResult{
 		{FilePath: "a.go", LineNum: 1, Score: 0.9},
 		{FilePath: "b.go", LineNum: 1, Score: 0.8},
 		{FilePath: "c.go", LineNum: 1, Score: 0.7},
@@ -128,7 +130,7 @@ func TestMergeResultsTopK(t *testing.T) {
 }
 
 func TestMergeResultsDefaultK(t *testing.T) {
-	vec := []Result{
+	vec := []domain.SearchResult{
 		{FilePath: "a.go", LineNum: 1},
 	}
 	// rrfK=0 should default to 60
@@ -142,12 +144,12 @@ func TestMergeResultsDefaultK(t *testing.T) {
 func TestMergeResultSetsWeightedContribution(t *testing.T) {
 	sets := []weightedResultSet{
 		{
-			Results:  []Result{{FilePath: "original.go", LineNum: 1}},
+			Results:  []domain.SearchResult{{FilePath: "original.go", LineNum: 1}},
 			Modality: retrievalModalityVec,
 			Source:   querySourceOriginal,
 		},
 		{
-			Results:  []Result{{FilePath: "expanded.go", LineNum: 1}},
+			Results:  []domain.SearchResult{{FilePath: "expanded.go", LineNum: 1}},
 			Modality: retrievalModalityFTS,
 			Source:   querySourceExpanded,
 		},
@@ -179,7 +181,7 @@ func TestMergeResultSetsWeightedContribution(t *testing.T) {
 func TestMergeResultSetsTieBreakByPath(t *testing.T) {
 	sets := []weightedResultSet{
 		{
-			Results: []Result{
+			Results: []domain.SearchResult{
 				{FilePath: "b.go", LineNum: 1},
 				{FilePath: "a.go", LineNum: 1},
 			},
@@ -187,7 +189,7 @@ func TestMergeResultSetsTieBreakByPath(t *testing.T) {
 			Source:   querySourceOriginal,
 		},
 		{
-			Results: []Result{
+			Results: []domain.SearchResult{
 				{FilePath: "a.go", LineNum: 1},
 				{FilePath: "b.go", LineNum: 1},
 			},
@@ -206,13 +208,13 @@ func TestMergeResultSetsTieBreakByPath(t *testing.T) {
 }
 
 func TestMergeResultSetsNeutralWeightsCompatible(t *testing.T) {
-	vec := [][]Result{
+	vec := [][]domain.SearchResult{
 		{
 			{FilePath: "a.go", LineNum: 1},
 			{FilePath: "b.go", LineNum: 1},
 		},
 	}
-	fts := [][]Result{
+	fts := [][]domain.SearchResult{
 		{
 			{FilePath: "b.go", LineNum: 1},
 			{FilePath: "c.go", LineNum: 1},
