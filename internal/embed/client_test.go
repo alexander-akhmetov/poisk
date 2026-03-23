@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 )
 
@@ -130,6 +131,76 @@ func TestEmbed(t *testing.T) {
 	}
 	if embedding[0] != 0.1 || embedding[1] != 0.2 || embedding[2] != 0.3 {
 		t.Errorf("embedding = %v, want [0.1 0.2 0.3]", embedding)
+	}
+}
+
+func TestEmbedBatchRetries5xx(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		n := calls.Add(1)
+		if n < 3 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		resp := embeddingResponse{
+			Data: []struct {
+				Embedding []float32 `json:"embedding"`
+				Index     int       `json:"index"`
+			}{
+				{Embedding: []float32{1, 2, 3}, Index: 0},
+			},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "", "model", 3, true)
+	emb, err := client.EmbedBatch(context.Background(), []string{"test"})
+	if err != nil {
+		t.Fatalf("expected success after retries, got: %v", err)
+	}
+	if len(emb) != 1 {
+		t.Fatalf("got %d embeddings, want 1", len(emb))
+	}
+	if got := calls.Load(); got != 3 {
+		t.Errorf("expected 3 calls, got %d", got)
+	}
+}
+
+func TestEmbedBatchNoRetryOn4xx(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("bad request"))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "", "model", 3, true)
+	_, err := client.EmbedBatch(context.Background(), []string{"test"})
+	if err == nil {
+		t.Fatal("expected error for 400")
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("expected 1 call (no retry for 4xx), got %d", got)
+	}
+}
+
+func TestEmbedBatchExhaustsRetries(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "", "model", 3, true)
+	_, err := client.EmbedBatch(context.Background(), []string{"test"})
+	if err == nil {
+		t.Fatal("expected error after exhausting retries")
+	}
+	if got := calls.Load(); got != int32(maxRetries) {
+		t.Errorf("expected %d calls, got %d", maxRetries, got)
 	}
 }
 

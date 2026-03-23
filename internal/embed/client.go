@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"time"
 )
@@ -43,6 +45,12 @@ type embeddingResponse struct {
 	} `json:"data"`
 }
 
+const (
+	maxRetries    = 3
+	baseBackoff   = 500 * time.Millisecond
+	backoffFactor = 2.0
+)
+
 func (c *Client) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return nil, nil
@@ -61,6 +69,31 @@ func (c *Client) EmbedBatch(ctx context.Context, texts []string) ([][]float32, e
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
+	var lastErr error
+	for attempt := range maxRetries {
+		if attempt > 0 {
+			backoff := time.Duration(float64(baseBackoff) * math.Pow(backoffFactor, float64(attempt-1)))
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("embedding request: %w", context.Cause(ctx))
+			case <-time.After(backoff):
+			}
+		}
+
+		result, err := c.doEmbed(ctx, jsonBody)
+		if err == nil {
+			return c.parseResponse(result, len(texts))
+		}
+		lastErr = err
+
+		if !isTransient(err, ctx) {
+			return nil, err
+		}
+	}
+	return nil, lastErr
+}
+
+func (c *Client) doEmbed(ctx context.Context, jsonBody []byte) (*embeddingResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/embeddings", bytes.NewReader(jsonBody))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
@@ -78,15 +111,21 @@ func (c *Client) EmbedBatch(ctx context.Context, texts []string) ([][]float32, e
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("embedding API %d: %s", resp.StatusCode, string(respBody))
+		return nil, &apiError{
+			statusCode: resp.StatusCode,
+			body:       string(respBody),
+		}
 	}
 
 	var result embeddingResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
+	return &result, nil
+}
 
-	embeddings := make([][]float32, len(texts))
+func (c *Client) parseResponse(result *embeddingResponse, n int) ([][]float32, error) {
+	embeddings := make([][]float32, n)
 	for _, d := range result.Data {
 		if d.Index >= len(embeddings) {
 			return nil, fmt.Errorf("unexpected index %d in response", d.Index)
@@ -102,8 +141,30 @@ func (c *Client) EmbedBatch(ctx context.Context, texts []string) ([][]float32, e
 			return nil, fmt.Errorf("missing embedding for index %d", i)
 		}
 	}
-
 	return embeddings, nil
+}
+
+type apiError struct {
+	statusCode int
+	body       string
+}
+
+func (e *apiError) Error() string {
+	return fmt.Sprintf("embedding API %d: %s", e.statusCode, e.body)
+}
+
+func isTransient(err error, ctx context.Context) bool {
+	var ae *apiError
+	if errors.As(err, &ae) {
+		return ae.statusCode >= 500 || ae.statusCode == http.StatusTooManyRequests
+	}
+	// Non-transient only if the caller's own context is done (cancellation or deadline).
+	// HTTP client timeout wraps context.DeadlineExceeded via *url.Error, but that's
+	// a transient network-level timeout — only bail if the caller signaled cancellation.
+	if ctx.Err() != nil {
+		return false
+	}
+	return true
 }
 
 func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
