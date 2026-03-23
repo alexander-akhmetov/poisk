@@ -7,7 +7,7 @@
     {
       "name": "poisk",
       "source": "./",
-      "description": "Hybrid semantic + keyword search over source code and documents via MCP",
+      "description": "Hybrid semantic + keyword search over source code and documents via CLI",
       "version": "1.0.0"
     }
   ]

@@ -112,7 +112,7 @@ func writeFixture(t *testing.T, dir, name, content string) string {
 }
 
 // TestStatusJSONOutputStructure verifies that the --json status output has the
-// expected shape — this is the contract that MCP clients and scripts depend on.
+// expected shape — this is the contract that scripts and skills depend on.
 func TestStatusJSONOutputStructure(t *testing.T) {
 	ts := newTestStack(t)
 

@@ -12,26 +12,7 @@ import (
 	"time"
 
 	"github.com/alexander-akhmetov/poisk/internal/domain"
-	mcpserver "github.com/alexander-akhmetov/poisk/internal/mcp"
 )
-
-func cmdServe() error {
-	d, err := bootstrap()
-	if err != nil {
-		return err
-	}
-	defer d.Close()
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	slog.Info("starting MCP server", "transport", "stdio", "folders", len(d.Cfg.Folders))
-
-	if err := mcpserver.Run(ctx, d.IndexSvc, d.SearchSvc, d.DocumentSvc, d.StatusSvc); err != nil {
-		return fmt.Errorf("mcp server: %w", err)
-	}
-	return nil
-}
 
 func cmdIndex() error {
 	watch := false

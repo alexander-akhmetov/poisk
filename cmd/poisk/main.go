@@ -16,8 +16,6 @@ func main() {
 
 	var err error
 	switch os.Args[1] {
-	case "serve":
-		err = cmdServe()
 	case "index":
 		err = cmdIndex()
 	case "run":
@@ -43,7 +41,6 @@ func usage() {
 	fmt.Fprintf(os.Stderr, `Usage: poisk <command>
 
 Commands:
-  serve   Start MCP server (stdio)
   index   Index configured folders
             --watch       Re-index periodically instead of once
             --interval D  Interval between cycles (default 5m)
