@@ -50,7 +50,7 @@ exclude_patterns = [".git", "node_modules", "vendor", "__pycache__", ".venv", "d
 # Skip files larger than this (in KB)
 max_file_size_kb = 512
 
-# Optional: LLM configuration for "poisk ask" and MCP ask tool.
+# Optional: LLM configuration for query expansion.
 # Requires any OpenAI-compatible chat completions API.
 # [llm]
 # base_url = "http://localhost:11434/v1"

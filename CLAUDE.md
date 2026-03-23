@@ -1,6 +1,6 @@
 # poisk
 
-Hybrid search with MCP interface.
+Hybrid search over local files and codebases.
 
 ## Build & Test
 

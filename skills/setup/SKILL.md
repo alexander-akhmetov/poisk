@@ -227,5 +227,4 @@ poisk index --watch              # Keep running and re-index periodically (defau
 poisk index --watch --interval 2m  # Custom watch interval
 poisk run "<query>"              # Search
 poisk status                     # Show index status
-poisk serve                      # Start MCP server (stdio)
 ```

@@ -28,10 +28,6 @@
     "relevant_files": ["internal/chunk/markdown.go"]
   },
   {
-    "query": "MCP server search tool handler",
-    "relevant_files": ["internal/mcp/search_handler.go"]
-  },
-  {
     "query": "indexer folder incremental mtime tracking",
     "relevant_files": ["internal/index/indexer.go"]
   },
@@ -68,12 +64,8 @@
     "relevant_files": ["internal/search/search.go"]
   },
   {
-    "query": "CLI subcommand serve index search status",
+    "query": "CLI subcommand index search status",
     "relevant_files": ["cmd/poisk/main.go", "cmd/poisk/commands.go"]
-  },
-  {
-    "query": "reindex force clear source",
-    "relevant_files": ["internal/mcp/reindex_handler.go"]
   },
   {
     "query": "schema version migration drop recreate",
