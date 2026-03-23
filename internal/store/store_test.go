@@ -664,6 +664,38 @@ func TestVec0DimensionChange(t *testing.T) {
 	}
 }
 
+func TestStaleIndexingProgressClearedOnOpen(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "stale.db")
+
+	s1 := openTestStoreAt(t, dbPath)
+
+	// Simulate a crash: write progress but never clear it
+	if err := s1.SetIndexingProgress("/tmp/src", 100, 42, 1000); err != nil {
+		t.Fatal(err)
+	}
+	progress, err := s1.GetIndexingProgress()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(progress) != 1 {
+		t.Fatalf("expected 1 progress row, got %d", len(progress))
+	}
+	if err := s1.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reopen — stale rows must be gone
+	s2 := openTestStoreAt(t, dbPath)
+	progress, err = s2.GetIndexingProgress()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(progress) != 0 {
+		t.Fatalf("expected stale indexing_progress cleared on open, got %d rows", len(progress))
+	}
+}
+
 func TestFTSMetadataColumnsAreIndexedAndSearchable(t *testing.T) {
 	s := openTestStore(t)
 	if !s.FTSAvailable() {
