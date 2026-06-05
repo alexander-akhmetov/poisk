@@ -68,8 +68,21 @@ description = "My application"
 # Per-folder overrides (override global [index] defaults when set):
 # exclude_patterns = ["testdata", "vendor"]
 # include_patterns = ["*.go", "*.md"]
+# max_file_size_kb = 512
 
 # [[folders]]
 # path = "/home/user/notes"
 # description = "Personal notes"
 # include_patterns = ["*.md", "*.txt", "*.org"]
+
+# Index pi coding-agent session transcripts as searchable turn chunks.
+# include_patterns is required: .jsonl is not in the default extension set, so
+# without it the session files are not picked up (and unrelated .jsonl data
+# files elsewhere stay out of the index).
+# Session files are large (often 300KB-1MB+), so raise max_file_size_kb for
+# this folder only; the global cap stays small for code folders.
+# [[folders]]
+# path = "~/.pi/agent/sessions"
+# description = "pi coding agent sessions"
+# include_patterns = ["*.jsonl"]
+# max_file_size_kb = 4096

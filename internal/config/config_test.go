@@ -356,6 +356,64 @@ include_patterns = []
 	}
 }
 
+func TestEffectiveMaxFileSizeKB(t *testing.T) {
+	tests := []struct {
+		name   string
+		folder FolderConfig
+		global int
+		want   int
+	}{
+		{"override set", FolderConfig{MaxFileSizeKB: 4096}, 512, 4096},
+		{"unset falls back to global", FolderConfig{}, 512, 512},
+		{"zero falls back to global", FolderConfig{MaxFileSizeKB: 0}, 512, 512},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.folder.EffectiveMaxFileSizeKB(tt.global); got != tt.want {
+				t.Errorf("EffectiveMaxFileSizeKB(%d) = %d, want %d", tt.global, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadFolderMaxFileSizeOverride(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	dir := filepath.Join(tmp, "poisk")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := `
+[index]
+max_file_size_kb = 512
+
+[[folders]]
+path = "/tmp/sessions"
+description = "large sessions"
+max_file_size_kb = 4096
+
+[[folders]]
+path = "/tmp/code"
+description = "uses global cap"
+`
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := cfg.Folders[0].EffectiveMaxFileSizeKB(cfg.Index.MaxFileSizeKB); got != 4096 {
+		t.Errorf("folder[0] max size = %d, want 4096", got)
+	}
+	if got := cfg.Folders[1].EffectiveMaxFileSizeKB(cfg.Index.MaxFileSizeKB); got != 512 {
+		t.Errorf("folder[1] max size = %d, want global 512", got)
+	}
+}
+
 func TestLoadTildeExpansion(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)

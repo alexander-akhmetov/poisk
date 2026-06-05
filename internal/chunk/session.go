@@ -12,6 +12,7 @@ const maxSessionChunkChars = 3000
 type sessionLine struct {
 	Type    string         `json:"type"`
 	Slug    string         `json:"slug"`
+	ID      string         `json:"id"` // pi: session id (header line)
 	Message sessionMessage `json:"message"`
 }
 
@@ -30,8 +31,18 @@ type parsedLine struct {
 	data    sessionLine
 }
 
-// chunkSession parses Claude Code session JSONL into conversation turn chunks.
-// Returns nil if the content is not a recognized session format.
+type turn struct {
+	userText      string
+	assistantText string
+	startLine     int
+	endLine       int
+}
+
+// chunkSession parses coding-agent session JSONL into conversation turn chunks.
+// It understands two schemas: Claude Code (top-level type:"user"/"assistant",
+// top-level slug) and pi (top-level type:"message" with nested message.role,
+// a type:"session" header carrying the session id). Returns nil if the content
+// is not a recognized session format.
 func chunkSession(content string) []Chunk {
 	if strings.TrimSpace(content) == "" {
 		return nil
@@ -52,30 +63,32 @@ func chunkSession(content string) []Chunk {
 		parsed = append(parsed, parsedLine{lineNum: i + 1, data: sl})
 	}
 
-	if !isSessionFormat(parsed) {
+	format := detectSessionFormat(parsed)
+	if format == "" {
 		return nil
 	}
 
-	slug := extractSlug(parsed)
+	slug := sessionSlug(parsed, format)
+	turns := buildTurns(parsed, format)
 
-	type turn struct {
-		userText      string
-		assistantText string
-		startLine     int
-		endLine       int
-	}
+	return emitTurnChunks(turns, slug)
+}
 
+// buildTurns groups user/assistant text into turns. Each user message starts a
+// new turn; assistant text is appended to the current turn. Roles other than
+// user/assistant (system, progress, pi toolResult) and non-text blocks
+// (thinking, toolCall) are dropped by extractText / effectiveRole.
+func buildTurns(parsed []parsedLine, format string) []turn {
 	var turns []turn
 	var current *turn
 
 	for _, pl := range parsed {
-		switch pl.data.Type {
+		switch effectiveRole(pl, format) {
 		case "user":
 			text := extractText(pl.data.Message.Content)
 			if text == "" {
 				continue
 			}
-			// Each user message starts a new turn.
 			if current != nil {
 				turns = append(turns, *current)
 			}
@@ -104,7 +117,10 @@ func chunkSession(content string) []Chunk {
 	if current != nil {
 		turns = append(turns, *current)
 	}
+	return turns
+}
 
+func emitTurnChunks(turns []turn, slug string) []Chunk {
 	chunks := []Chunk{}
 	turnNum := 0
 	for _, t := range turns {
@@ -129,29 +145,84 @@ func chunkSession(content string) []Chunk {
 			chunks = append(chunks, splitTurn(text, t.startLine, t.endLine, symbol)...)
 		}
 	}
-
 	return chunks
 }
 
-func isSessionFormat(parsed []parsedLine) bool {
-	knownTypes := map[string]bool{
+// effectiveRole returns the conversation role for a line, normalizing across
+// formats. For Claude Code the role is the top-level type; for pi only
+// type:"message" lines carry a role, nested under message.role.
+func effectiveRole(pl parsedLine, format string) string {
+	if format == "pi" {
+		if pl.data.Type != "message" {
+			return ""
+		}
+		return pl.data.Message.Role
+	}
+	return pl.data.Type
+}
+
+// detectSessionFormat returns "claude", "pi", or "" (not a session) based on
+// the first few parsed lines.
+func detectSessionFormat(parsed []parsedLine) string {
+	claudeTypes := map[string]bool{
 		"user": true, "assistant": true, "system": true, "progress": true,
 	}
-	checked := 0
-	matched := 0
+	piHeader := false
+	piMessages := 0
+	claudeMatched := 0
+	inspected := 0
 	for _, pl := range parsed {
-		if pl.data.Type == "" {
-			continue
+		inspected++
+		t := pl.data.Type
+		switch {
+		case t == "session":
+			piHeader = true
+		case t == "message" && pl.data.Message.Role != "":
+			piMessages++
+		case claudeTypes[t]:
+			claudeMatched++
 		}
-		checked++
-		if knownTypes[pl.data.Type] {
-			matched++
-		}
-		if checked >= 5 {
+		if inspected >= 5 {
 			break
 		}
 	}
-	return checked > 0 && matched > 0 && matched*2 >= checked
+	// A type:"session" header is an unambiguous pi marker. Without it, require a
+	// majority of the inspected lines to be pi message lines so a stray
+	// message/role-shaped record in an unrelated .jsonl file doesn't get
+	// misclassified as a session (it should fall through to generic chunking).
+	if piHeader {
+		return "pi"
+	}
+	if piMessages > 0 && piMessages*2 >= inspected {
+		return "pi"
+	}
+	if claudeMatched > 0 && claudeMatched*2 >= inspected {
+		return "claude"
+	}
+	return ""
+}
+
+// sessionSlug derives the per-session symbol prefix. Claude Code carries a
+// top-level slug; pi has no slug, so we use the first 8 chars of the header id.
+func sessionSlug(parsed []parsedLine, format string) string {
+	if format == "pi" {
+		// Use the header (type:"session") id; message lines carry their own
+		// per-line ids that must not become the slug.
+		for _, pl := range parsed {
+			if pl.data.Type == "session" && pl.data.ID != "" {
+				return shortID(pl.data.ID)
+			}
+		}
+		return ""
+	}
+	return extractSlug(parsed)
+}
+
+func shortID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 func extractSlug(parsed []parsedLine) string {

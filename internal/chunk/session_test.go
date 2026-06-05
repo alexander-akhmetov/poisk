@@ -361,6 +361,198 @@ func TestChunkSession_ViaFileDispatch(t *testing.T) {
 	}
 }
 
+// --- pi coding-agent format ---
+
+const piHeader = `{"type":"session","version":3,"id":"2df495f5-feee-78b9-8535-9d2a80a81b46","timestamp":"2026-06-01T21:17:51.931Z","cwd":"/Users/alexander/projects/jrnl"}`
+
+func TestChunkSession_PiBasicTurn(t *testing.T) {
+	content := piHeader + `
+{"type":"message","id":"m1","message":{"role":"user","content":[{"type":"text","text":"hey, does jrnl support pi sessions?"}]}}
+{"type":"message","id":"m2","message":{"role":"assistant","content":[{"type":"text","text":"Not yet, but the chunker can be extended to parse them."}]}}`
+
+	chunks := chunkSession(content)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+
+	c := chunks[0]
+	if c.Language != "session" {
+		t.Errorf("Language = %q, want %q", c.Language, "session")
+	}
+	if c.Kind != "turn" {
+		t.Errorf("Kind = %q, want %q", c.Kind, "turn")
+	}
+	if c.Symbol != "2df495f5#1" {
+		t.Errorf("Symbol = %q, want %q", c.Symbol, "2df495f5#1")
+	}
+	if !strings.Contains(c.Text, "User: hey, does jrnl support pi sessions?") {
+		t.Errorf("chunk text missing user question: %q", c.Text)
+	}
+	if !strings.Contains(c.Text, "Assistant: Not yet") {
+		t.Errorf("chunk text missing assistant response: %q", c.Text)
+	}
+}
+
+func TestChunkSession_PiMultiTurn(t *testing.T) {
+	content := piHeader + `
+{"type":"message","id":"m1","message":{"role":"user","content":[{"type":"text","text":"What is pi exactly here?"}]}}
+{"type":"message","id":"m2","message":{"role":"assistant","content":[{"type":"text","text":"pi is a coding agent that records sessions as JSONL."}]}}
+{"type":"message","id":"m3","message":{"role":"user","content":[{"type":"text","text":"Where are the sessions stored on disk?"}]}}
+{"type":"message","id":"m4","message":{"role":"assistant","content":[{"type":"text","text":"Under the agent sessions directory, one file per session."}]}}`
+
+	chunks := chunkSession(content)
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 chunks, got %d", len(chunks))
+	}
+	if chunks[0].Symbol != "2df495f5#1" {
+		t.Errorf("chunks[0].Symbol = %q, want %q", chunks[0].Symbol, "2df495f5#1")
+	}
+	if chunks[1].Symbol != "2df495f5#2" {
+		t.Errorf("chunks[1].Symbol = %q, want %q", chunks[1].Symbol, "2df495f5#2")
+	}
+}
+
+func TestChunkSession_PiStripsThinkingToolCallToolResult(t *testing.T) {
+	content := piHeader + `
+{"type":"message","id":"m1","message":{"role":"user","content":[{"type":"text","text":"Find the bug in the parser please."}]}}
+{"type":"message","id":"m2","message":{"role":"assistant","content":[{"type":"thinking","text":"Let me inspect the tokenizer first.","thinkingSignature":"sig"},{"type":"text","text":"The bug is an off-by-one in the loop."},{"type":"toolCall","id":"t1","name":"read_file","arguments":{"path":"parser.go"}}]}}
+{"type":"message","id":"m3","message":{"role":"toolResult","content":[{"type":"text","text":"raw file contents from the tool that must not be indexed"}]}}
+{"type":"message","id":"m4","message":{"role":"user","content":[{"type":"text","text":"Great, thanks for finding it."}]}}
+{"type":"message","id":"m5","message":{"role":"assistant","content":[{"type":"text","text":"You are welcome, glad it helped."}]}}`
+
+	chunks := chunkSession(content)
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 chunks, got %d", len(chunks))
+	}
+
+	all := chunks[0].Text + "\n" + chunks[1].Text
+	if strings.Contains(all, "inspect the tokenizer") {
+		t.Error("thinking block text should not appear in chunks")
+	}
+	if strings.Contains(all, "read_file") || strings.Contains(all, "parser.go") {
+		t.Error("toolCall content should not appear in chunks")
+	}
+	if strings.Contains(all, "raw file contents from the tool") {
+		t.Error("toolResult message content should not appear in chunks")
+	}
+	if !strings.Contains(chunks[0].Text, "off-by-one in the loop") {
+		t.Errorf("missing assistant text block: %q", chunks[0].Text)
+	}
+}
+
+func TestChunkSession_PiIgnoresNonMessageLines(t *testing.T) {
+	content := piHeader + `
+{"type":"model_change","id":"x1","model":"some-model"}
+{"type":"message","id":"m1","message":{"role":"user","content":[{"type":"text","text":"Does the header line get indexed as a turn?"}]}}
+{"type":"thinking_level_change","id":"x2","level":"high"}
+{"type":"message","id":"m2","message":{"role":"assistant","content":[{"type":"text","text":"No, only message lines with user or assistant roles become turns."}]}}
+{"type":"custom","id":"x3","payload":{"anything":"here"}}`
+
+	chunks := chunkSession(content)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	if strings.Contains(chunks[0].Text, "some-model") || strings.Contains(chunks[0].Text, "payload") {
+		t.Error("non-message top-level lines should not appear in chunks")
+	}
+}
+
+func TestChunkSession_PiNoHeaderID(t *testing.T) {
+	// A pi file detected purely by type:"message" lines, with no session id.
+	content := `{"type":"message","id":"m1","message":{"role":"user","content":[{"type":"text","text":"Can pi sessions be detected without a header?"}]}}
+{"type":"message","id":"m2","message":{"role":"assistant","content":[{"type":"text","text":"Yes, message lines with a nested role are enough to detect pi."}]}}`
+
+	chunks := chunkSession(content)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	if chunks[0].Symbol != "#1" {
+		t.Errorf("Symbol = %q, want %q (empty slug)", chunks[0].Symbol, "#1")
+	}
+}
+
+func TestChunkSession_StrayMessageLineNotPi(t *testing.T) {
+	// A non-session .jsonl that happens to contain a single message/role-shaped
+	// record should not be misclassified as a pi session. Without a header and
+	// without a majority of pi message lines, detection must return "" so File()
+	// falls back to generic chunking instead of dropping the file.
+	content := `{"name":"Alice","age":30}
+{"name":"Bob","age":25}
+{"type":"message","id":"m1","message":{"role":"user","content":[{"type":"text","text":"stray record"}]}}
+{"name":"Charlie","age":35}
+{"name":"Dave","age":40}`
+
+	chunks := chunkSession(content)
+	if chunks != nil {
+		t.Fatalf("expected nil (not a session), got %d chunks", len(chunks))
+	}
+}
+
+func TestChunkSession_PiLargeTurnSplit(t *testing.T) {
+	paragraphs := make([]string, 0, 20)
+	for range 20 {
+		paragraphs = append(paragraphs, strings.Repeat("This is paragraph content that fills space. ", 10))
+	}
+	largeResponse := strings.Join(paragraphs, "\n\n")
+	encoded, _ := json.Marshal(largeResponse)
+	inner := string(encoded[1 : len(encoded)-1])
+
+	content := piHeader + `
+{"type":"message","id":"m1","message":{"role":"user","content":[{"type":"text","text":"Give me a detailed explanation of pi session indexing."}]}}
+{"type":"message","id":"m2","message":{"role":"assistant","content":[{"type":"text","text":"` + inner + `"}]}}`
+
+	chunks := chunkSession(content)
+	if len(chunks) < 2 {
+		t.Fatalf("expected at least 2 chunks for large turn, got %d", len(chunks))
+	}
+
+	seen := map[int]bool{}
+	for i, c := range chunks {
+		if c.Language != "session" || c.Kind != "turn" {
+			t.Errorf("chunks[%d] = (%q,%q), want (session,turn)", i, c.Language, c.Kind)
+		}
+		if c.Symbol != "2df495f5#1" {
+			t.Errorf("chunks[%d].Symbol = %q, want %q", i, c.Symbol, "2df495f5#1")
+		}
+		if seen[c.StartLine] {
+			t.Errorf("chunks[%d].StartLine = %d is duplicate (FTS dedupe collision)", i, c.StartLine)
+		}
+		seen[c.StartLine] = true
+	}
+}
+
+func TestChunkSession_PiContentAlwaysBlockArray(t *testing.T) {
+	// pi content is always an array of blocks (never a bare string).
+	content := piHeader + `
+{"type":"message","id":"m1","message":{"role":"user","content":[{"type":"text","text":"first part of the question "},{"type":"text","text":"and the second part too"}]}}
+{"type":"message","id":"m2","message":{"role":"assistant","content":[{"type":"text","text":"Both text blocks are concatenated into the user turn."}]}}`
+
+	chunks := chunkSession(content)
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(chunks))
+	}
+	if !strings.Contains(chunks[0].Text, "first part of the question") || !strings.Contains(chunks[0].Text, "and the second part too") {
+		t.Errorf("expected both user text blocks: %q", chunks[0].Text)
+	}
+}
+
+func TestChunkSession_PiViaFileDispatch(t *testing.T) {
+	content := piHeader + `
+{"type":"message","id":"m1","message":{"role":"user","content":[{"type":"text","text":"Does File() route pi sessions correctly?"}]}}
+{"type":"message","id":"m2","message":{"role":"assistant","content":[{"type":"text","text":"Yes, .jsonl dispatches to chunkSession which now handles pi."}]}}`
+
+	chunks, err := File("session.jsonl", content)
+	if err != nil {
+		t.Fatalf("File() error: %v", err)
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("expected 1 chunk via File(), got %d", len(chunks))
+	}
+	if chunks[0].Language != "session" {
+		t.Errorf("Language = %q, want %q", chunks[0].Language, "session")
+	}
+}
+
 func TestChunkSession_NonSessionJSONLFallsBackViaFile(t *testing.T) {
 	content := `{"name":"Alice","age":30}
 {"name":"Bob","age":25}

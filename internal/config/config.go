@@ -71,6 +71,7 @@ type FolderConfig struct {
 	Context         map[string]string `toml:"context"`
 	ExcludePatterns []string          `toml:"exclude_patterns"`
 	IncludePatterns []string          `toml:"include_patterns"`
+	MaxFileSizeKB   int               `toml:"max_file_size_kb"`
 }
 
 // EffectiveExcludePatterns returns folder-level patterns if set, otherwise global.
@@ -86,6 +87,16 @@ func (f *FolderConfig) EffectiveExcludePatterns(global []string) []string {
 func (f *FolderConfig) EffectiveIncludePatterns(global []string) []string {
 	if f.IncludePatterns != nil {
 		return f.IncludePatterns
+	}
+	return global
+}
+
+// EffectiveMaxFileSizeKB returns the folder-level cap if set (> 0), otherwise
+// the global value. Session folders set a larger cap because pi session files
+// routinely exceed the 512KB default.
+func (f *FolderConfig) EffectiveMaxFileSizeKB(global int) int {
+	if f.MaxFileSizeKB > 0 {
+		return f.MaxFileSizeKB
 	}
 	return global
 }
