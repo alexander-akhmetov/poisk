@@ -177,7 +177,7 @@ func detectSessionFormat(parsed []parsedLine) string {
 		switch {
 		case t == "session":
 			piHeader = true
-		case t == "message" && pl.data.Message.Role != "":
+		case t == "message" && (pl.data.Message.Role == "user" || pl.data.Message.Role == "assistant"):
 			piMessages++
 		case claudeTypes[t]:
 			claudeMatched++
@@ -190,6 +190,10 @@ func detectSessionFormat(parsed []parsedLine) string {
 	// majority of the inspected lines to be pi message lines so a stray
 	// message/role-shaped record in an unrelated .jsonl file doesn't get
 	// misclassified as a session (it should fall through to generic chunking).
+	// Only user/assistant roles count: buildTurns drops everything else, so a
+	// log full of message/role records like toolResult would otherwise be
+	// detected as pi but produce zero turns, yielding a non-nil empty slice that
+	// suppresses the generic fallback chunking in File().
 	if piHeader {
 		return "pi"
 	}

@@ -488,6 +488,21 @@ func TestChunkSession_StrayMessageLineNotPi(t *testing.T) {
 	}
 }
 
+func TestChunkSession_MessageRecordsWithoutUserAssistantRolesNotPi(t *testing.T) {
+	// A pi-adjacent log made entirely of message records whose roles are neither
+	// user nor assistant (e.g. toolResult) produces zero turns. Detection must
+	// not classify it as pi, otherwise chunkSession returns a non-nil empty slice
+	// and File() suppresses the generic fallback chunking.
+	content := `{"type":"message","id":"m1","message":{"role":"toolResult","content":[{"type":"text","text":"tool output one"}]}}
+{"type":"message","id":"m2","message":{"role":"toolResult","content":[{"type":"text","text":"tool output two"}]}}
+{"type":"message","id":"m3","message":{"role":"toolResult","content":[{"type":"text","text":"tool output three"}]}}`
+
+	chunks := chunkSession(content)
+	if chunks != nil {
+		t.Fatalf("expected nil (not a session), got %d chunks", len(chunks))
+	}
+}
+
 func TestChunkSession_PiLargeTurnSplit(t *testing.T) {
 	paragraphs := make([]string, 0, 20)
 	for range 20 {
