@@ -3,6 +3,7 @@ package search
 import (
 	"strings"
 
+	"github.com/alexander-akhmetov/poisk/internal/domain"
 	"github.com/alexander-akhmetov/poisk/internal/store"
 )
 
@@ -19,7 +20,7 @@ func appendInClause(query string, args []any, column string, values []string) (s
 	return query, args
 }
 
-func searchVec(s *store.Store, queryBlob []byte, topK int, folders []string, filters MetadataFilters, threshold float64) ([]Result, error) {
+func searchVec(s *store.Store, queryBlob []byte, topK int, folders []string, filters MetadataFilters, threshold float64) ([]domain.SearchResult, error) {
 	if !s.VecAvailable() {
 		return nil, nil
 	}
@@ -46,7 +47,7 @@ func searchVec(s *store.Store, queryBlob []byte, topK int, folders []string, fil
 	return results, nil
 }
 
-func execVecQuery(s *store.Store, queryBlob []byte, topK, fetchLimit int, folders []string, filters MetadataFilters, threshold float64) ([]Result, error) {
+func execVecQuery(s *store.Store, queryBlob []byte, topK, fetchLimit int, folders []string, filters MetadataFilters, threshold float64) ([]domain.SearchResult, error) {
 	query := `SELECT e.file_path, e.line_num, e.end_line, e.chunk_text, v.distance, e.folder, e.language, e.chunk_kind, e.symbol
 		FROM vec_embeddings v
 		JOIN embeddings e ON e.id = v.rowid
@@ -65,9 +66,9 @@ func execVecQuery(s *store.Store, queryBlob []byte, topK, fetchLimit int, folder
 	}
 	defer rows.Close()
 
-	var results []Result
+	var results []domain.SearchResult
 	for rows.Next() {
-		var r Result
+		var r domain.SearchResult
 		var distance float64
 		if err := rows.Scan(&r.FilePath, &r.LineNum, &r.EndLine, &r.Text, &distance, &r.Folder, &r.Language, &r.Kind, &r.Symbol); err != nil {
 			return nil, err

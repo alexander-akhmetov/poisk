@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/alexander-akhmetov/poisk/internal/domain"
 	"github.com/alexander-akhmetov/poisk/internal/store"
 )
 
@@ -19,45 +20,18 @@ func TestExecVecQueryAppliesFolderMetadataFiltersAndThreshold(t *testing.T) {
 		t.Skip("vec0 not available")
 	}
 
-	if err := s.InsertEntries("repo-a", "target.go", []store.Entry{
-		{
-			LineNum:   10,
-			EndLine:   20,
-			Text:      "fetch user by id",
-			Embedding: []float32{1, 0, 0},
-			Folder:    "repo-a",
-			Language:  "go",
-			Kind:      "function_declaration",
-			Symbol:    "FetchUser",
-		},
+	if err := s.InsertChunks("repo-a", "target.go", []domain.ChunkWithEmbedding{
+		{Chunk: domain.Chunk{LineNum: 10, EndLine: 20, Text: "fetch user by id", Folder: "repo-a", Language: "go", Kind: "function_declaration", Symbol: "FetchUser"}, Embedding: []float32{1, 0, 0}},
 	}); err != nil {
 		t.Fatalf("insert target entry: %v", err)
 	}
-	if err := s.InsertEntries("repo-b", "other-source.go", []store.Entry{
-		{
-			LineNum:   10,
-			EndLine:   20,
-			Text:      "fetch user by id",
-			Embedding: []float32{1, 0, 0},
-			Folder:    "repo-b",
-			Language:  "go",
-			Kind:      "function_declaration",
-			Symbol:    "FetchUser",
-		},
+	if err := s.InsertChunks("repo-b", "other-source.go", []domain.ChunkWithEmbedding{
+		{Chunk: domain.Chunk{LineNum: 10, EndLine: 20, Text: "fetch user by id", Folder: "repo-b", Language: "go", Kind: "function_declaration", Symbol: "FetchUser"}, Embedding: []float32{1, 0, 0}},
 	}); err != nil {
 		t.Fatalf("insert cross-folder noise entry: %v", err)
 	}
-	if err := s.InsertEntries("repo-a", "wrong-language.go", []store.Entry{
-		{
-			LineNum:   10,
-			EndLine:   20,
-			Text:      "fetch user by id",
-			Embedding: []float32{1, 0, 0},
-			Folder:    "repo-a",
-			Language:  "rust",
-			Kind:      "function_item",
-			Symbol:    "fetch_user",
-		},
+	if err := s.InsertChunks("repo-a", "wrong-language.go", []domain.ChunkWithEmbedding{
+		{Chunk: domain.Chunk{LineNum: 10, EndLine: 20, Text: "fetch user by id", Folder: "repo-a", Language: "rust", Kind: "function_item", Symbol: "fetch_user"}, Embedding: []float32{1, 0, 0}},
 	}); err != nil {
 		t.Fatalf("insert metadata noise entry: %v", err)
 	}
@@ -97,32 +71,14 @@ func TestSearchVecRetriesWhenFilteredResultsAreBelowTopK(t *testing.T) {
 	}
 
 	for i := range 15 {
-		if err := s.InsertEntries("repo", fmt.Sprintf("noise-%02d.go", i), []store.Entry{
-			{
-				LineNum:   1,
-				EndLine:   1,
-				Text:      "python helper",
-				Embedding: []float32{1, 0, 0},
-				Folder:    "repo",
-				Language:  "python",
-				Kind:      "function_definition",
-				Symbol:    fmt.Sprintf("noise%d", i),
-			},
+		if err := s.InsertChunks("repo", fmt.Sprintf("noise-%02d.go", i), []domain.ChunkWithEmbedding{
+			{Chunk: domain.Chunk{LineNum: 1, EndLine: 1, Text: "python helper", Folder: "repo", Language: "python", Kind: "function_definition", Symbol: fmt.Sprintf("noise%d", i)}, Embedding: []float32{1, 0, 0}},
 		}); err != nil {
 			t.Fatalf("insert noise entry %d: %v", i, err)
 		}
 	}
-	if err := s.InsertEntries("repo", "target.go", []store.Entry{
-		{
-			LineNum:   1,
-			EndLine:   1,
-			Text:      "go helper",
-			Embedding: []float32{0.8, 0.2, 0},
-			Folder:    "repo",
-			Language:  "go",
-			Kind:      "function_declaration",
-			Symbol:    "target",
-		},
+	if err := s.InsertChunks("repo", "target.go", []domain.ChunkWithEmbedding{
+		{Chunk: domain.Chunk{LineNum: 1, EndLine: 1, Text: "go helper", Folder: "repo", Language: "go", Kind: "function_declaration", Symbol: "target"}, Embedding: []float32{0.8, 0.2, 0}},
 	}); err != nil {
 		t.Fatalf("insert target entry: %v", err)
 	}

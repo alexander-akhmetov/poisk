@@ -8,23 +8,11 @@ import (
 	"strings"
 
 	"github.com/alexander-akhmetov/poisk/internal/config"
+	"github.com/alexander-akhmetov/poisk/internal/domain"
 	"github.com/alexander-akhmetov/poisk/internal/embed"
 	"github.com/alexander-akhmetov/poisk/internal/llm"
 	"github.com/alexander-akhmetov/poisk/internal/store"
 )
-
-type Result struct {
-	FilePath string
-	LineNum  int
-	EndLine  int
-	Text     string
-	Score    float64
-	Folder   string
-	Language string
-	Kind     string
-	Symbol   string
-	Context  []string
-}
 
 type Searcher struct {
 	store     *store.Store
@@ -38,7 +26,7 @@ func NewSearcher(s *store.Store, c *embed.Client, cfg *config.Config, llmClient 
 }
 
 //nolint:gocyclo
-func (s *Searcher) Search(ctx context.Context, query string, topK int, folders []string) ([]Result, error) {
+func (s *Searcher) Search(ctx context.Context, query string, topK int, folders []string) ([]domain.SearchResult, error) {
 	if topK <= 0 {
 		topK = s.cfg.Search.DefaultTopK
 	}

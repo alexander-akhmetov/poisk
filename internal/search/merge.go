@@ -3,6 +3,8 @@ package search
 import (
 	"fmt"
 	"sort"
+
+	"github.com/alexander-akhmetov/poisk/internal/domain"
 )
 
 type retrievalModality string
@@ -20,7 +22,7 @@ const (
 )
 
 type weightedResultSet struct {
-	Results  []Result
+	Results  []domain.SearchResult
 	Modality retrievalModality
 	Source   querySource
 }
@@ -67,7 +69,7 @@ func (w fusionWeights) setWeight(modality retrievalModality, source querySource)
 	return modalityWeight * sourceWeight
 }
 
-func mergeResultSets(sets []weightedResultSet, rrfK int, topK int, weights fusionWeights) []Result {
+func mergeResultSets(sets []weightedResultSet, rrfK int, topK int, weights fusionWeights) []domain.SearchResult {
 	if len(sets) == 0 {
 		return nil
 	}
@@ -76,7 +78,7 @@ func mergeResultSets(sets []weightedResultSet, rrfK int, topK int, weights fusio
 	}
 
 	type merged struct {
-		Result
+		domain.SearchResult
 		rrfScore float64
 	}
 
@@ -90,15 +92,15 @@ func mergeResultSets(sets []weightedResultSet, rrfK int, topK int, weights fusio
 			if existing, ok := m[key]; ok {
 				existing.rrfScore += score
 			} else {
-				m[key] = &merged{Result: r, rrfScore: score}
+				m[key] = &merged{SearchResult: r, rrfScore: score}
 			}
 		}
 	}
 
-	results := make([]Result, 0, len(m))
+	results := make([]domain.SearchResult, 0, len(m))
 	for _, v := range m {
 		v.Score = v.rrfScore
-		results = append(results, v.Result)
+		results = append(results, v.SearchResult)
 	}
 	if len(results) == 0 {
 		return nil
@@ -125,7 +127,7 @@ func mergeResultSets(sets []weightedResultSet, rrfK int, topK int, weights fusio
 
 // mergeMultiResults merges multiple vec and FTS result sets using RRF.
 // Each set contributes a 1/(k+rank) score; scores accumulate across all sets.
-func mergeMultiResults(vecSets, ftsSets [][]Result, rrfK int, topK int) []Result {
+func mergeMultiResults(vecSets, ftsSets [][]domain.SearchResult, rrfK int, topK int) []domain.SearchResult {
 	sets := make([]weightedResultSet, 0, len(vecSets)+len(ftsSets))
 	for _, set := range vecSets {
 		sets = append(sets, weightedResultSet{
@@ -148,7 +150,7 @@ func mergeMultiResults(vecSets, ftsSets [][]Result, rrfK int, topK int) []Result
 // mergeResults combines vector and FTS results using Reciprocal Rank Fusion.
 // RRF score for each document = Σ 1/(k + rank_i) where rank_i is the 1-based
 // position from each retriever. This is immune to score-scale mismatches.
-func mergeResults(vecResults, ftsResults []Result, rrfK int, topK int) []Result {
+func mergeResults(vecResults, ftsResults []domain.SearchResult, rrfK int, topK int) []domain.SearchResult {
 	return mergeResultSets([]weightedResultSet{
 		{Results: vecResults, Modality: retrievalModalityVec, Source: querySourceOriginal},
 		{Results: ftsResults, Modality: retrievalModalityFTS, Source: querySourceOriginal},

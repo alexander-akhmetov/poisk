@@ -1,21 +1,12 @@
 package store
 
-import "fmt"
+import (
+	"fmt"
 
-type Entry struct {
-	Source    string
-	FilePath  string
-	LineNum   int
-	EndLine   int
-	Text      string
-	Embedding []float32
-	Folder    string
-	Language  string
-	Kind      string
-	Symbol    string
-}
+	"github.com/alexander-akhmetov/poisk/internal/domain"
+)
 
-func (s *Store) InsertEntries(source, filePath string, entries []Entry) error {
+func (s *Store) InsertChunks(source, filePath string, entries []domain.ChunkWithEmbedding) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -92,7 +83,7 @@ func (s *Store) Count(source string) (int, error) {
 	return count, err
 }
 
-func (s *Store) GetEntriesByPath(source, filePath string) ([]Entry, error) {
+func (s *Store) GetChunksByPath(source, filePath string) ([]domain.Chunk, error) {
 	rows, err := s.db.Query(
 		`SELECT file_path, line_num, end_line, chunk_text, folder, language, chunk_kind, symbol
 		FROM embeddings WHERE source = ? AND file_path = ? ORDER BY line_num`,
@@ -103,16 +94,16 @@ func (s *Store) GetEntriesByPath(source, filePath string) ([]Entry, error) {
 	}
 	defer rows.Close()
 
-	var entries []Entry
+	var chunks []domain.Chunk
 	for rows.Next() {
-		var e Entry
-		e.Source = source
-		if err := rows.Scan(&e.FilePath, &e.LineNum, &e.EndLine, &e.Text, &e.Folder, &e.Language, &e.Kind, &e.Symbol); err != nil {
+		var c domain.Chunk
+		c.Source = source
+		if err := rows.Scan(&c.FilePath, &c.LineNum, &c.EndLine, &c.Text, &c.Folder, &c.Language, &c.Kind, &c.Symbol); err != nil {
 			return nil, fmt.Errorf("scan entry: %w", err)
 		}
-		entries = append(entries, e)
+		chunks = append(chunks, c)
 	}
-	return entries, rows.Err()
+	return chunks, rows.Err()
 }
 
 func (s *Store) ClearSource(source string) error {

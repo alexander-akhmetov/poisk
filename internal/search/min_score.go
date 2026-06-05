@@ -1,8 +1,8 @@
 package search
 
-// filterMinScore removes results with Score below the threshold.
-// Returns the original slice unmodified when minScore <= 0.
-func filterMinScore(results []Result, minScore float64) []Result {
+import "github.com/alexander-akhmetov/poisk/internal/domain"
+
+func filterMinScore(results []domain.SearchResult, minScore float64) []domain.SearchResult {
 	if minScore <= 0 || len(results) == 0 {
 		return results
 	}
