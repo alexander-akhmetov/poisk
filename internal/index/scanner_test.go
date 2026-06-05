@@ -3,6 +3,7 @@ package index
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -182,5 +183,44 @@ func TestScanFolderPerFolderExclude(t *testing.T) {
 	}
 	if got[filepath.Join("vendor", "lib.go")] {
 		t.Error("expected vendor/lib.go to be excluded")
+	}
+}
+
+func TestScanFolderMaxFileSize(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+
+	small := []byte("package main")
+	large := []byte("package main\n// " + strings.Repeat("x", 2*1024))
+	if err := os.WriteFile(filepath.Join(dir, "small.go"), small, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "large.go"), large, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1KB cap skips large.go.
+	files, err := scanFolder(dir, nil, nil, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(map[string]bool)
+	for _, f := range files {
+		rel, _ := filepath.Rel(dir, f)
+		got[rel] = true
+	}
+	if !got["small.go"] {
+		t.Error("expected small.go under the size cap to be included")
+	}
+	if got["large.go"] {
+		t.Error("expected large.go over the size cap to be skipped")
+	}
+
+	// A larger cap picks both up.
+	files, err = scanFolder(dir, nil, nil, 16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 {
+		t.Errorf("expected 2 files with a 16KB cap, got %d", len(files))
 	}
 }

@@ -135,6 +135,7 @@ One or more folders to index. Each is indexed independently.
 | `description` | no | Human-readable label |
 | `exclude_patterns` | no | Override global `[index].exclude_patterns` |
 | `include_patterns` | no | Override global `[index].include_patterns` |
+| `max_file_size_kb` | no | Override global `[index].max_file_size_kb` (when > 0) |
 
 ```toml
 [[folders]]
@@ -147,6 +148,34 @@ path = "~/notes"
 description = "Personal notes"
 include_patterns = ["*.md", "*.txt", "*.org"]
 ```
+
+### Indexing coding-agent sessions
+
+poisk can index conversation transcripts from Claude Code and pi as searchable
+turn chunks (one chunk per user+assistant exchange). Each turn is stored with
+`lang:session` and `kind:turn`, so you can scope searches with
+`poisk run "lang:session kind:turn <what you remember>"`. Only user and
+assistant text is kept; thinking, tool calls, and tool results are dropped.
+
+pi stores one `.jsonl` per session under `~/.pi/agent/sessions/`. To index them:
+
+```toml
+[[folders]]
+path = "~/.pi/agent/sessions"
+description = "pi coding agent sessions"
+include_patterns = ["*.jsonl"]
+max_file_size_kb = 4096
+```
+
+Two things matter here:
+
+- `include_patterns = ["*.jsonl"]` is required. `.jsonl` is not in the default
+  extension set, so without it the sessions are skipped. Scoping it to this
+  folder also keeps unrelated `.jsonl` data files elsewhere out of the index.
+- `max_file_size_kb` must be raised. Session files routinely run 300KB to 1MB+,
+  well past the 512KB default, and oversized files are silently skipped at scan
+  time. The per-folder override lets sessions use a larger cap while code
+  folders keep the smaller default.
 
 ## Full example
 

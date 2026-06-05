@@ -96,19 +96,21 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 		}
 	}
 
-	// Resolve per-folder pattern overrides
+	// Resolve per-folder overrides
 	excludePatterns := ix.cfg.Index.ExcludePatterns
 	includePatterns := ix.cfg.Index.IncludePatterns
+	maxFileSizeKB := ix.cfg.Index.MaxFileSizeKB
 	for i := range ix.cfg.Folders {
 		if ix.cfg.Folders[i].Path == folder {
 			excludePatterns = ix.cfg.Folders[i].EffectiveExcludePatterns(ix.cfg.Index.ExcludePatterns)
 			includePatterns = ix.cfg.Folders[i].EffectiveIncludePatterns(ix.cfg.Index.IncludePatterns)
+			maxFileSizeKB = ix.cfg.Folders[i].EffectiveMaxFileSizeKB(ix.cfg.Index.MaxFileSizeKB)
 			break
 		}
 	}
 
 	// Scan files
-	files, err := scanFolder(folder, excludePatterns, includePatterns, ix.cfg.Index.MaxFileSizeKB)
+	files, err := scanFolder(folder, excludePatterns, includePatterns, maxFileSizeKB)
 	if err != nil {
 		return stats, err
 	}
