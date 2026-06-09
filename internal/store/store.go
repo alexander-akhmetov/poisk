@@ -88,9 +88,13 @@ func (s *Store) initSchema() error {
 		}
 	}
 
-	// Indexing progress (not versioned — transient runtime state)
+	// Indexing progress (not versioned — transient runtime state).
+	// Any rows surviving from a previous run are stale (crash leftovers).
 	if _, err := s.db.Exec(indexingProgressDDL); err != nil {
 		return fmt.Errorf("create indexing_progress: %w", err)
+	}
+	if _, err := s.db.Exec("DELETE FROM indexing_progress"); err != nil {
+		return fmt.Errorf("clear stale indexing_progress: %w", err)
 	}
 
 	// Drop legacy embedding blob column if it exists.
