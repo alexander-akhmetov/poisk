@@ -48,12 +48,16 @@ func testEmbedServer(t *testing.T, dims int) *httptest.Server {
 }
 
 type mcpTestEnv struct {
-	client  *gomcp.ClientSession
-	indexer *index.Indexer
-	db      *store.Store
-	cfg     *config.Config
-	corpus  string
-	cleanup func()
+	client    *gomcp.ClientSession
+	indexer   *index.Indexer
+	db        *store.Store
+	cfg       *config.Config
+	corpus    string
+	indexSvc  *app.IndexService
+	searchSvc *app.SearchService
+	docSvc    *app.DocumentService
+	statusSvc *app.StatusService
+	cleanup   func()
 }
 
 func newMCPTestEnv(t *testing.T) *mcpTestEnv {
@@ -93,15 +97,7 @@ func newMCPTestEnv(t *testing.T) *mcpTestEnv {
 	statusSvc := app.NewStatusService(db, &cfg)
 
 	// Set up MCP server with in-memory transport
-	server := gomcp.NewServer(
-		&gomcp.Implementation{Name: "poisk-test", Version: "0.1.0"},
-		nil,
-	)
-	registerSearchTool(server, searchSvc)
-	registerReindexTool(server, indexSvc)
-	registerGetTool(server, docSvc)
-	registerMultiGetTool(server, docSvc)
-	registerStatusResource(server, statusSvc)
+	server := newServer(indexSvc, searchSvc, docSvc, statusSvc)
 
 	ct, st := gomcp.NewInMemoryTransports()
 	ss, err := server.Connect(ctx, st, nil)
@@ -122,11 +118,15 @@ func newMCPTestEnv(t *testing.T) *mcpTestEnv {
 	}
 
 	return &mcpTestEnv{
-		client:  cs,
-		indexer: indexer,
-		db:      db,
-		cfg:     &cfg,
-		corpus:  corpus,
+		client:    cs,
+		indexer:   indexer,
+		db:        db,
+		cfg:       &cfg,
+		corpus:    corpus,
+		indexSvc:  indexSvc,
+		searchSvc: searchSvc,
+		docSvc:    docSvc,
+		statusSvc: statusSvc,
 		cleanup: func() {
 			cs.Close()
 			_ = ss.Wait()
@@ -548,5 +548,148 @@ func TestListTools(t *testing.T) {
 		if !found {
 			t.Errorf("expected tool %q not found in ListTools", name)
 		}
+	}
+}
+
+type bearerRoundTripper struct {
+	token string
+	base  http.RoundTripper
+}
+
+func (rt *bearerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.Header.Set("Authorization", "Bearer "+rt.token)
+	return rt.base.RoundTrip(req)
+}
+
+func TestHTTPHandlerAuth(t *testing.T) {
+	env := newMCPTestEnv(t)
+	defer env.cleanup()
+
+	writeFixture(t, env.corpus, "algo.go", `package algo
+
+// BubbleSort sorts a slice in place using the bubble sort algorithm.
+func BubbleSort(data []int) {
+    for i := 0; i < len(data); i++ {
+        for j := 0; j < len(data)-i-1; j++ {
+            if data[j] > data[j+1] {
+                data[j], data[j+1] = data[j+1], data[j]
+            }
+        }
+    }
+}
+`)
+	if _, err := env.indexer.IndexAll(context.Background()); err != nil {
+		t.Fatalf("index: %v", err)
+	}
+
+	const token = "test-secret"
+	server := newServer(env.indexSvc, env.searchSvc, env.docSvc, env.statusSvc)
+	srv := httptest.NewServer(newHTTPHandler(token, server))
+	defer srv.Close()
+
+	tests := []struct {
+		name       string
+		authHeader string
+		wantStatus int
+	}{
+		{name: "no token", authHeader: "", wantStatus: http.StatusUnauthorized},
+		{name: "wrong token", authHeader: "Bearer wrong-token", wantStatus: http.StatusUnauthorized},
+		{name: "malformed header", authHeader: token, wantStatus: http.StatusUnauthorized},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader("{}"))
+			if err != nil {
+				t.Fatalf("new request: %v", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			if tt.authHeader != "" {
+				req.Header.Set("Authorization", tt.authHeader)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("request: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != tt.wantStatus {
+				t.Errorf("status = %d, want %d", resp.StatusCode, tt.wantStatus)
+			}
+		})
+	}
+
+	t.Run("correct token", func(t *testing.T) {
+		ctx := context.Background()
+		client := gomcp.NewClient(
+			&gomcp.Implementation{Name: "test-http-client", Version: "0.1.0"},
+			nil,
+		)
+		transport := &gomcp.StreamableClientTransport{
+			Endpoint: srv.URL,
+			HTTPClient: &http.Client{
+				Transport: &bearerRoundTripper{token: token, base: http.DefaultTransport},
+			},
+		}
+		cs, err := client.Connect(ctx, transport, nil)
+		if err != nil {
+			t.Fatalf("client connect: %v", err)
+		}
+		defer cs.Close()
+
+		result, err := cs.CallTool(ctx, &gomcp.CallToolParams{
+			Name:      "search",
+			Arguments: SearchInput{Query: "lex:BubbleSort", TopK: 5},
+		})
+		if err != nil {
+			t.Fatalf("CallTool(search): %v", err)
+		}
+		text := toolText(t, result)
+		if !strings.Contains(text, "BubbleSort") {
+			t.Errorf("search result should contain 'BubbleSort', got: %s", text)
+		}
+	})
+}
+
+func TestRunHTTPStartupGuards(t *testing.T) {
+	tests := []struct {
+		name    string
+		addr    string
+		token   string
+		wantErr string
+	}{
+		{name: "empty token", addr: "127.0.0.1:0", token: "", wantErr: "token"},
+		{name: "empty listen address", addr: "", token: "test-secret", wantErr: "listen address"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := RunHTTP(context.Background(), tt.addr, tt.token, nil, nil, nil, nil)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want mention of %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestRunHTTPGracefulShutdown(t *testing.T) {
+	env := newMCPTestEnv(t)
+	defer env.cleanup()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RunHTTP(ctx, "127.0.0.1:0", "test-secret", env.indexSvc, env.searchSvc, env.docSvc, env.statusSvc)
+	}()
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RunHTTP returned error: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("RunHTTP did not return after context cancellation")
 	}
 }

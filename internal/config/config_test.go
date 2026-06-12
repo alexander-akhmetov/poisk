@@ -215,6 +215,68 @@ func TestLoad(t *testing.T) {
 		if cfg.Embedding.Model != def.Embedding.Model {
 			t.Errorf("model = %q, want default %q", cfg.Embedding.Model, def.Embedding.Model)
 		}
+		if cfg.Server.Listen != "127.0.0.1:8765" {
+			t.Errorf("server.listen = %q, want default %q", cfg.Server.Listen, "127.0.0.1:8765")
+		}
+		if cfg.Server.Token != "" {
+			t.Errorf("server.token = %q, want empty default", cfg.Server.Token)
+		}
+	})
+
+	t.Run("server section", func(t *testing.T) {
+		tmp := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", tmp)
+
+		dir := filepath.Join(tmp, "poisk")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		content := `
+[server]
+listen = "0.0.0.0:9000"
+token = "secret"
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.Server.Listen != "0.0.0.0:9000" {
+			t.Errorf("server.listen = %q, want %q", cfg.Server.Listen, "0.0.0.0:9000")
+		}
+		if cfg.Server.Token != "secret" {
+			t.Errorf("server.token = %q, want %q", cfg.Server.Token, "secret")
+		}
+	})
+
+	t.Run("explicit empty server listen overrides default", func(t *testing.T) {
+		tmp := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", tmp)
+
+		dir := filepath.Join(tmp, "poisk")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		content := `
+[server]
+listen = ""
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// An explicit empty value replaces the loopback default; RunHTTP
+		// rejects it so the server never binds an unintended address.
+		if cfg.Server.Listen != "" {
+			t.Errorf("server.listen = %q, want empty", cfg.Server.Listen)
+		}
 	})
 
 	t.Run("valid TOML", func(t *testing.T) {

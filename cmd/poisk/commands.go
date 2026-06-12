@@ -16,6 +16,21 @@ import (
 )
 
 func cmdServe() error {
+	useHTTP := false
+	listen := ""
+	for i := 2; i < len(os.Args); i++ {
+		switch os.Args[i] {
+		case "--http":
+			useHTTP = true
+		case "--listen":
+			if i+1 >= len(os.Args) {
+				return fmt.Errorf("--listen requires an address (e.g. 127.0.0.1:8765)")
+			}
+			i++
+			listen = os.Args[i]
+		}
+	}
+
 	d, err := bootstrap()
 	if err != nil {
 		return err
@@ -24,6 +39,28 @@ func cmdServe() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	if useHTTP {
+		addr := d.Cfg.Server.Listen
+		if listen != "" {
+			addr = listen
+		}
+		token := d.Cfg.Server.Token
+		if token == "" {
+			token = os.Getenv("POISK_SERVER_TOKEN")
+		}
+
+		slog.Info("starting MCP server", "transport", "http", "addr", addr, "folders", len(d.Cfg.Folders))
+
+		if err := mcpserver.RunHTTP(ctx, addr, token, d.IndexSvc, d.SearchSvc, d.DocumentSvc, d.StatusSvc); err != nil {
+			return fmt.Errorf("mcp server: %w", err)
+		}
+		return nil
+	}
+
+	if listen != "" {
+		slog.Warn("--listen has no effect without --http")
+	}
 
 	slog.Info("starting MCP server", "transport", "stdio", "folders", len(d.Cfg.Folders))
 

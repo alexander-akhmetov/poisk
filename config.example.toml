@@ -66,6 +66,16 @@ max_file_size_kb = 512
 # max_context_chunks = 10
 # system_prompt = "You are a helpful assistant. Answer based on the provided context."
 
+# Optional: HTTP server mode for `poisk serve --http`.
+# A token is required in HTTP mode (fail closed) and grants read access to
+# everything in the configured folders. Leave token empty and set the
+# POISK_SERVER_TOKEN environment variable to keep the secret out of this file.
+# poisk serves plain HTTP; for non-localhost access put it behind a reverse
+# proxy or tunnel that terminates TLS, otherwise the token travels in cleartext.
+# [server]
+# listen = "127.0.0.1:8765"
+# token = ""
+
 # Add one or more [[folders]] sections to index.
 # Each folder is indexed independently and can be filtered in search queries.
 

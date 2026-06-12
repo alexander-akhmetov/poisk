@@ -127,6 +127,23 @@ base_url = "http://localhost:11434/v1"
 model = "llama3"
 ```
 
+### `[server]`
+
+Optional. Used by `poisk serve --http` (MCP over Streamable HTTP for remote clients). Stdio mode ignores this section.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `listen` | `127.0.0.1:8765` | Listen address; override per run with `--listen` |
+| `token` | `""` | Bearer token required on every request; falls back to `POISK_SERVER_TOKEN` env var. HTTP mode refuses to start without a token |
+
+```toml
+[server]
+listen = "127.0.0.1:8765"
+token = "secret"
+```
+
+The token grants read access to all indexed folders. poisk serves plain HTTP — for non-localhost access, put it behind a reverse proxy or tunnel that terminates TLS.
+
 ### `[[folders]]`
 
 One or more folders to index. Each is indexed independently.
@@ -259,4 +276,6 @@ poisk index --watch --interval 2m  # Custom watch interval
 poisk run "<query>"              # Search
 poisk status                     # Show index status
 poisk serve                      # Start MCP server (stdio)
+poisk serve --http               # Serve MCP over HTTP with bearer-token auth
+poisk serve --http --listen 127.0.0.1:9000  # Custom listen address
 ```

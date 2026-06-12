@@ -106,6 +106,25 @@ poisk status
 
 # Start MCP server (stdio transport)
 poisk serve
+
+# Serve MCP over HTTP (Streamable HTTP) with bearer-token auth
+POISK_SERVER_TOKEN=secret poisk serve --http
+poisk serve --http --listen 127.0.0.1:9000
+```
+
+### HTTP mode
+
+`poisk serve --http` serves MCP over [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http) so remote MCP clients can search a centrally indexed machine. It listens on `[server].listen` from the config (default `127.0.0.1:8765`), overridable with `--listen`. Every request must carry a bearer token, taken from `[server].token` in the config or the `POISK_SERVER_TOKEN` environment variable; the server refuses to start without one.
+
+Security notes:
+
+- The token grants read access to everything in the configured folders — `get` and `multi_get` return file contents from disk.
+- poisk serves plain HTTP. The default listen address is loopback-only; for remote access, put it behind a reverse proxy or tunnel that terminates TLS, otherwise the token travels in cleartext.
+
+Example Claude Code client setup:
+
+```bash
+claude mcp add --transport http poisk http://127.0.0.1:8765 --header "Authorization: Bearer secret"
 ```
 
 ### Query syntax

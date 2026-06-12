@@ -25,7 +25,13 @@ type Config struct {
 	LLM       LLMConfig       `toml:"llm"`
 	Search    SearchConfig    `toml:"search"`
 	Index     IndexConfig     `toml:"index"`
+	Server    ServerConfig    `toml:"server"`
 	Folders   []FolderConfig  `toml:"folders"`
+}
+
+type ServerConfig struct {
+	Listen string `toml:"listen"`
+	Token  string `toml:"token"`
 }
 
 type LLMConfig struct {
@@ -130,6 +136,9 @@ func DefaultConfig() Config {
 		Index: IndexConfig{
 			ExcludePatterns: []string{".git", "node_modules", "vendor", "__pycache__", ".venv"},
 			MaxFileSizeKB:   512,
+		},
+		Server: ServerConfig{
+			Listen: "127.0.0.1:8765",
 		},
 	}
 }

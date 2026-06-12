@@ -43,7 +43,10 @@ func usage() {
 	fmt.Fprintf(os.Stderr, `Usage: poisk <command>
 
 Commands:
-  serve   Start MCP server (stdio)
+  serve   Start MCP server (stdio by default)
+            --http        Serve MCP over HTTP instead of stdio; requires a
+                          bearer token (server.token or POISK_SERVER_TOKEN)
+            --listen A    Listen address for --http (default 127.0.0.1:8765)
   index   Index configured folders
             --watch       Re-index periodically instead of once
             --interval D  Interval between cycles (default 5m)
