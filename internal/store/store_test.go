@@ -19,7 +19,7 @@ func openTestStore(t *testing.T) *Store {
 
 func openTestStoreAt(t *testing.T, dbPath string) *Store {
 	t.Helper()
-	s, err := Open(dbPath, 3)
+	s, err := Open(dbPath, 3, QuantizationInt8)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,25 +128,33 @@ func TestInsertAndCount(t *testing.T) {
 func TestModelChanged(t *testing.T) {
 	s := openTestStore(t)
 
-	mc, _ := s.ModelChanged("src", "model-v1", 768)
+	mc, _ := s.ModelChanged("src", "model-v1", 768, QuantizationInt8)
 	if !mc.Changed {
 		t.Fatal("expected changed for new source")
 	}
 
-	if err := s.UpdateMeta("src", "model-v1", 768); err != nil {
+	if err := s.UpdateMeta("src", "model-v1", 768, QuantizationInt8); err != nil {
 		t.Fatal(err)
 	}
-	mc, _ = s.ModelChanged("src", "model-v1", 768)
+	mc, _ = s.ModelChanged("src", "model-v1", 768, QuantizationInt8)
 	if mc.Changed {
 		t.Fatal("expected not changed")
 	}
 
-	mc, _ = s.ModelChanged("src", "model-v2", 768)
+	mc, _ = s.ModelChanged("src", "model-v2", 768, QuantizationInt8)
 	if !mc.Changed {
 		t.Fatal("expected changed after model change")
 	}
 	if mc.OldModel != "model-v1" || mc.OldDims != 768 {
 		t.Fatalf("expected old model=model-v1 dims=768, got model=%s dims=%d", mc.OldModel, mc.OldDims)
+	}
+
+	mc, _ = s.ModelChanged("src", "model-v1", 768, QuantizationFloat32)
+	if !mc.Changed {
+		t.Fatal("expected changed after quantization change")
+	}
+	if mc.OldQuantization != QuantizationInt8 {
+		t.Fatalf("expected old quantization=int8, got %q", mc.OldQuantization)
 	}
 }
 
@@ -161,7 +169,7 @@ func TestClearSource(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.UpdateMeta("src", "model", 3); err != nil {
+	if err := s.UpdateMeta("src", "model", 3, QuantizationInt8); err != nil {
 		t.Fatal(err)
 	}
 
@@ -177,7 +185,7 @@ func TestClearSource(t *testing.T) {
 	if ok {
 		t.Fatal("expected mtime cleared")
 	}
-	mc, _ := s.ModelChanged("src", "model", 3)
+	mc, _ := s.ModelChanged("src", "model", 3, QuantizationInt8)
 	if !mc.Changed {
 		t.Fatal("expected meta cleared")
 	}
@@ -194,10 +202,10 @@ func TestAllSources(t *testing.T) {
 		t.Fatalf("expected 0 sources, got %d", len(sources))
 	}
 
-	if err := s.UpdateMeta("src", "model", 3); err != nil {
+	if err := s.UpdateMeta("src", "model", 3, QuantizationInt8); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.UpdateMeta("docs", "model", 3); err != nil {
+	if err := s.UpdateMeta("docs", "model", 3, QuantizationInt8); err != nil {
 		t.Fatal(err)
 	}
 
@@ -291,7 +299,7 @@ func TestTrackedFilePaths(t *testing.T) {
 func TestDBPathCreation(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "sub", "nested", "test.db")
-	s, err := Open(dbPath, 3)
+	s, err := Open(dbPath, 3, QuantizationInt8)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +364,7 @@ func TestReopenWithSameVersionDoesNotDropData(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s1.UpdateMeta("src", "model-v1", 3); err != nil {
+	if err := s1.UpdateMeta("src", "model-v1", 3, QuantizationInt8); err != nil {
 		t.Fatal(err)
 	}
 	if err := s1.Close(); err != nil {
@@ -374,7 +382,7 @@ func TestReopenWithSameVersionDoesNotDropData(t *testing.T) {
 		t.Fatalf("count=%d after reopen, want 1 (data was dropped)", count)
 	}
 
-	mc, err := s2.ModelChanged("src", "model-v1", 3)
+	mc, err := s2.ModelChanged("src", "model-v1", 3, QuantizationInt8)
 	if err != nil {
 		t.Fatalf("ModelChanged: %v", err)
 	}
@@ -409,7 +417,7 @@ func TestClearSourceAtomicity(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.UpdateMeta("src", "model", 3); err != nil {
+	if err := s.UpdateMeta("src", "model", 3, QuantizationInt8); err != nil {
 		t.Fatal(err)
 	}
 
@@ -425,7 +433,7 @@ func TestClearSourceAtomicity(t *testing.T) {
 	if ok {
 		t.Fatal("embedding_files not cleared")
 	}
-	mc, _ := s.ModelChanged("src", "model", 3)
+	mc, _ := s.ModelChanged("src", "model", 3, QuantizationInt8)
 	if !mc.Changed {
 		t.Fatal("embedding_meta not cleared")
 	}
@@ -614,7 +622,7 @@ func TestVec0DimensionChange(t *testing.T) {
 	dbPath := filepath.Join(dir, "dims.db")
 
 	// Open with dims=3, insert data, close
-	s1, err := Open(dbPath, 3)
+	s1, err := Open(dbPath, 3, QuantizationInt8)
 	if err != nil {
 		t.Fatalf("open dims=3: %v", err)
 	}
@@ -627,7 +635,7 @@ func TestVec0DimensionChange(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("insert dims=3: %v", err)
 	}
-	if err := s1.UpdateMeta("src", "model-v1", 3); err != nil {
+	if err := s1.UpdateMeta("src", "model-v1", 3, QuantizationInt8); err != nil {
 		t.Fatalf("update meta dims=3: %v", err)
 	}
 	if err := s1.Close(); err != nil {
@@ -635,7 +643,7 @@ func TestVec0DimensionChange(t *testing.T) {
 	}
 
 	// Reopen with dims=5 — vec0 table should be recreated
-	s2, err := Open(dbPath, 5)
+	s2, err := Open(dbPath, 5, QuantizationInt8)
 	if err != nil {
 		t.Fatalf("open dims=5: %v", err)
 	}
@@ -655,12 +663,156 @@ func TestVec0DimensionChange(t *testing.T) {
 	}
 
 	// Stale meta with old dimensions should be cleaned
-	mc, err := s2.ModelChanged("src", "model-v1", 5)
+	mc, err := s2.ModelChanged("src", "model-v1", 5, QuantizationInt8)
 	if err != nil {
 		t.Fatalf("ModelChanged: %v", err)
 	}
 	if !mc.Changed {
 		t.Fatal("expected model changed after dimension increase")
+	}
+}
+
+func TestVec0QuantizationChange(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "quant.db")
+
+	// Open with int8, insert data, close
+	s1, err := Open(dbPath, 3, QuantizationInt8)
+	if err != nil {
+		t.Fatalf("open int8: %v", err)
+	}
+	if !s1.VecAvailable() {
+		s1.Close()
+		t.Skip("vec0 not available")
+	}
+	if err := s1.InsertEntries("src", "main.go", []Entry{
+		{LineNum: 1, EndLine: 5, Text: "func A()", Embedding: []float32{1, 0, 0}, Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "A"},
+	}); err != nil {
+		t.Fatalf("insert int8: %v", err)
+	}
+	if err := s1.UpdateMeta("src", "model-v1", 3, QuantizationInt8); err != nil {
+		t.Fatalf("update meta int8: %v", err)
+	}
+	if err := s1.Close(); err != nil {
+		t.Fatalf("close int8: %v", err)
+	}
+
+	// Reopen with float32 — vec0 table should be recreated
+	s2, err := Open(dbPath, 3, QuantizationFloat32)
+	if err != nil {
+		t.Fatalf("open float32: %v", err)
+	}
+	defer s2.Close()
+
+	if !s2.VecAvailable() {
+		t.Fatal("expected vec0 available after quantization change")
+	}
+
+	var ddl string
+	if err := s2.DB().QueryRow("SELECT sql FROM sqlite_master WHERE name='vec_embeddings'").Scan(&ddl); err != nil {
+		t.Fatalf("read vec_embeddings ddl: %v", err)
+	}
+	if !strings.Contains(ddl, "float[3]") {
+		t.Fatalf("expected float[3] vec0 column after quantization change, got: %s", ddl)
+	}
+
+	// Old vec data should be gone (vec0 table was dropped and recreated)
+	var vecCount int
+	if err := s2.DB().QueryRow("SELECT COUNT(*) FROM vec_embeddings").Scan(&vecCount); err != nil {
+		t.Fatalf("count vec_embeddings: %v", err)
+	}
+	if vecCount != 0 {
+		t.Fatalf("expected 0 vec entries after quantization change, got %d", vecCount)
+	}
+
+	// Stale meta with old quantization should be cleaned
+	mc, err := s2.ModelChanged("src", "model-v1", 3, QuantizationFloat32)
+	if err != nil {
+		t.Fatalf("ModelChanged: %v", err)
+	}
+	if !mc.Changed {
+		t.Fatal("expected model changed after quantization change")
+	}
+}
+
+func TestVec0KNNRoundtrip(t *testing.T) {
+	tests := []struct {
+		name         string
+		quantization string
+		wantElem     string
+	}{
+		{"int8", QuantizationInt8, "int8[3]"},
+		{"float32", QuantizationFloat32, "float[3]"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dbPath := filepath.Join(t.TempDir(), "knn.db")
+			s, err := Open(dbPath, 3, tt.quantization)
+			if err != nil {
+				t.Fatalf("open: %v", err)
+			}
+			t.Cleanup(func() { s.Close() })
+			if !s.VecAvailable() {
+				t.Skip("vec0 not available")
+			}
+
+			var ddl string
+			if err := s.DB().QueryRow("SELECT sql FROM sqlite_master WHERE name='vec_embeddings'").Scan(&ddl); err != nil {
+				t.Fatalf("read vec_embeddings ddl: %v", err)
+			}
+			if !strings.Contains(ddl, tt.wantElem) || !strings.Contains(ddl, "distance_metric=cosine") {
+				t.Fatalf("expected %s cosine vec0 column, got: %s", tt.wantElem, ddl)
+			}
+
+			// Unit-norm vectors: exact match, nearby (cos=0.8), orthogonal
+			if err := s.InsertEntries("src", "main.go", []Entry{
+				{LineNum: 1, Text: "exact", Embedding: []float32{1, 0, 0}},
+				{LineNum: 2, Text: "near", Embedding: []float32{0.8, 0.6, 0}},
+				{LineNum: 3, Text: "orthogonal", Embedding: []float32{0, 1, 0}},
+			}); err != nil {
+				t.Fatalf("insert: %v", err)
+			}
+
+			queryBlob := Float32sToBlob([]float32{1, 0, 0})
+			rows, err := s.DB().Query(
+				"SELECT e.chunk_text, v.distance FROM vec_embeddings v JOIN embeddings e ON e.id = v.rowid WHERE v.embedding MATCH "+s.VecValueExpr()+" AND k = 3 ORDER BY v.distance",
+				queryBlob,
+			)
+			if err != nil {
+				t.Fatalf("knn query: %v", err)
+			}
+			defer rows.Close()
+
+			var texts []string
+			var distances []float64
+			for rows.Next() {
+				var text string
+				var d float64
+				if err := rows.Scan(&text, &d); err != nil {
+					t.Fatalf("scan: %v", err)
+				}
+				texts = append(texts, text)
+				distances = append(distances, d)
+			}
+			if err := rows.Err(); err != nil {
+				t.Fatal(err)
+			}
+
+			if len(texts) != 3 {
+				t.Fatalf("expected 3 results, got %d", len(texts))
+			}
+			if texts[0] != "exact" || texts[1] != "near" || texts[2] != "orthogonal" {
+				t.Fatalf("unexpected ranking: %v (distances %v)", texts, distances)
+			}
+			// Cosine distances: exact ~0, near ~0.2, orthogonal ~1
+			wantDist := []float64{0, 0.2, 1}
+			for i, want := range wantDist {
+				if diff := distances[i] - want; diff < -0.05 || diff > 0.05 {
+					t.Fatalf("distance[%d] = %v, want ~%v (all: %v)", i, distances[i], want, distances)
+				}
+			}
+		})
 	}
 }
 

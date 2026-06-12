@@ -9,8 +9,17 @@ import (
 )
 
 func TestExecVecQueryAppliesFolderMetadataFiltersAndThreshold(t *testing.T) {
+	for _, quantization := range []string{store.QuantizationInt8, store.QuantizationFloat32} {
+		t.Run(quantization, func(t *testing.T) {
+			testExecVecQueryFiltersAndThreshold(t, quantization)
+		})
+	}
+}
+
+func testExecVecQueryFiltersAndThreshold(t *testing.T, quantization string) {
+	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "vec-filters.db")
-	s, err := store.Open(dbPath, 3)
+	s, err := store.Open(dbPath, 3, quantization)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -87,7 +96,7 @@ func TestExecVecQueryAppliesFolderMetadataFiltersAndThreshold(t *testing.T) {
 
 func TestSearchVecRetriesWhenFilteredResultsAreBelowTopK(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "vec-retry.db")
-	s, err := store.Open(dbPath, 3)
+	s, err := store.Open(dbPath, 3, store.QuantizationInt8)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

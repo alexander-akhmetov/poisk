@@ -41,6 +41,8 @@ type EmbeddingConfig struct {
 	Dimensions     int    `toml:"dimensions"`
 	BatchSize      int    `toml:"batch_size"`
 	SendDimensions bool   `toml:"send_dimensions"` // send dimensions param in API request
+	Matryoshka     bool   `toml:"matryoshka"`      // truncate longer API vectors to dimensions and renormalize
+	Quantization   string `toml:"quantization"`    // vector storage type: "int8" or "float32"
 }
 
 type SearchConfig struct {
@@ -109,6 +111,7 @@ func DefaultConfig() Config {
 			Dimensions:     1024,
 			BatchSize:      50,
 			SendDimensions: true,
+			Quantization:   "int8",
 		},
 		Search: SearchConfig{
 			RRFk:                60,
@@ -186,6 +189,9 @@ func (c *Config) validate() error {
 	}
 	if c.Embedding.BatchSize <= 0 {
 		return fmt.Errorf("embedding.batch_size must be > 0")
+	}
+	if c.Embedding.Quantization != "int8" && c.Embedding.Quantization != "float32" {
+		return fmt.Errorf("embedding.quantization must be \"int8\" or \"float32\", got %q", c.Embedding.Quantization)
 	}
 	return c.Search.validate()
 }

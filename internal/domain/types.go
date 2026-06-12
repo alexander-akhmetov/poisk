@@ -35,9 +35,10 @@ type SearchResult struct {
 
 // ModelChange describes the result of a model change check.
 type ModelChange struct {
-	Changed  bool
-	OldModel string
-	OldDims  int
+	Changed         bool
+	OldModel        string
+	OldDims         int
+	OldQuantization string
 }
 
 type FolderStats struct {

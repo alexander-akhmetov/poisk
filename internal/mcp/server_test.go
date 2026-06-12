@@ -78,12 +78,12 @@ func newMCPTestEnv(t *testing.T) *mcpTestEnv {
 	}
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := store.Open(dbPath, dims)
+	db, err := store.Open(dbPath, dims, cfg.Embedding.Quantization)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 
-	embedClient := embed.NewClient(cfg.Embedding.BaseURL, "", cfg.Embedding.Model, dims, false)
+	embedClient := embed.NewClient(cfg.Embedding.BaseURL, "", cfg.Embedding.Model, dims, false, false)
 	indexer := index.NewIndexer(db, embedClient, &cfg)
 	searcher := search.NewSearcher(db, embedClient, &cfg, nil)
 

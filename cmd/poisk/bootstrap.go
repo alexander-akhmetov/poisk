@@ -39,7 +39,7 @@ func bootstrap() (*deps, error) {
 }
 
 func bootstrapWithConfig(cfg *config.Config) (*deps, error) {
-	db, err := store.Open(config.DBPath(), cfg.Embedding.Dimensions)
+	db, err := store.Open(config.DBPath(), cfg.Embedding.Dimensions, cfg.Embedding.Quantization)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
@@ -50,6 +50,7 @@ func bootstrapWithConfig(cfg *config.Config) (*deps, error) {
 		cfg.Embedding.Model,
 		cfg.Embedding.Dimensions,
 		cfg.Embedding.SendDimensions,
+		cfg.Embedding.Matryoshka,
 	)
 
 	var llmClient *llm.Client

@@ -2,7 +2,13 @@ package store
 
 import "strconv"
 
-const schemaVersion = 4
+const schemaVersion = 5
+
+// Quantization modes for vec0 vector storage.
+const (
+	QuantizationInt8    = "int8"
+	QuantizationFloat32 = "float32"
+)
 
 const schemaVersionDDL = `
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -35,9 +41,10 @@ CREATE INDEX IF NOT EXISTS idx_emb_source_file ON embeddings(source, file_path);
 CREATE INDEX IF NOT EXISTS idx_emb_meta ON embeddings(language, chunk_kind, symbol);
 
 CREATE TABLE IF NOT EXISTS embedding_meta (
-    source     TEXT PRIMARY KEY NOT NULL,
-    model      TEXT NOT NULL,
-    dimensions INTEGER NOT NULL
+    source       TEXT PRIMARY KEY NOT NULL,
+    model        TEXT NOT NULL,
+    dimensions   INTEGER NOT NULL,
+    quantization TEXT NOT NULL
 );
 `
 
@@ -48,8 +55,12 @@ const indexingProgressDDL = `CREATE TABLE IF NOT EXISTS indexing_progress (
     started_at INTEGER NOT NULL
 )`
 
-func vec0DDL(dims int) string {
-	return `CREATE VIRTUAL TABLE IF NOT EXISTS vec_embeddings USING vec0(embedding float[` + strconv.Itoa(dims) + `] distance_metric=cosine)`
+func vec0DDL(dims int, quantization string) string {
+	elem := "float"
+	if quantization == QuantizationInt8 {
+		elem = "int8"
+	}
+	return `CREATE VIRTUAL TABLE IF NOT EXISTS vec_embeddings USING vec0(embedding ` + elem + `[` + strconv.Itoa(dims) + `] distance_metric=cosine)`
 }
 
 const fts5DDL = `CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(chunk_text, id UNINDEXED, source UNINDEXED, file_path UNINDEXED, line_num UNINDEXED, folder UNINDEXED, end_line UNINDEXED, language, chunk_kind, symbol)`

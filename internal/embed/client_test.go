@@ -3,6 +3,7 @@ package embed //nolint:revive // internal package, no conflict with stdlib embed
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -43,7 +44,7 @@ func TestEmbedBatch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "", "test-model", 3, true)
+	client := NewClient(server.URL, "", "test-model", 3, true, false)
 	embeddings, err := client.EmbedBatch(context.Background(), []string{"hello", "world"})
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +61,7 @@ func TestEmbedBatch(t *testing.T) {
 }
 
 func TestEmbedBatchEmpty(t *testing.T) {
-	client := NewClient("http://unused", "", "model", 3, true)
+	client := NewClient("http://unused", "", "model", 3, true, false)
 	embeddings, err := client.EmbedBatch(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +87,7 @@ func TestEmbedBatchDimensionMismatch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "", "model", 3, true)
+	client := NewClient(server.URL, "", "model", 3, true, false)
 	_, err := client.EmbedBatch(context.Background(), []string{"test"})
 	if err == nil {
 		t.Fatal("expected dimension mismatch error")
@@ -120,7 +121,7 @@ func TestEmbed(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "", "test-model", 3, true)
+	client := NewClient(server.URL, "", "test-model", 3, true, false)
 	embedding, err := client.Embed(context.Background(), "hello world")
 	if err != nil {
 		t.Fatal(err)
@@ -128,8 +129,14 @@ func TestEmbed(t *testing.T) {
 	if len(embedding) != 3 {
 		t.Fatalf("got %d dimensions, want 3", len(embedding))
 	}
-	if embedding[0] != 0.1 || embedding[1] != 0.2 || embedding[2] != 0.3 {
-		t.Errorf("embedding = %v, want [0.1 0.2 0.3]", embedding)
+	// [0.1 0.2 0.3] L2-normalized
+	norm := float32(math.Sqrt(0.1*0.1 + 0.2*0.2 + 0.3*0.3))
+	want := []float32{0.1 / norm, 0.2 / norm, 0.3 / norm}
+	for i := range want {
+		if math.Abs(float64(embedding[i]-want[i])) > 1e-6 {
+			t.Errorf("embedding = %v, want %v", embedding, want)
+			break
+		}
 	}
 }
 
@@ -153,9 +160,101 @@ func TestEmbedBatchAuthHeader(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-key", "model", 3, true)
+	client := NewClient(server.URL, "test-key", "model", 3, true, false)
 	_, err := client.EmbedBatch(context.Background(), []string{"test"})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEmbedBatchMatryoshkaAndNormalization(t *testing.T) {
+	tests := []struct {
+		name       string
+		matryoshka bool
+		dimensions int
+		embedding  []float32
+		want       []float32 // nil means an error is expected
+	}{
+		{
+			name:       "exact dims normalized",
+			matryoshka: false,
+			dimensions: 3,
+			embedding:  []float32{3, 0, 4},
+			want:       []float32{0.6, 0, 0.8},
+		},
+		{
+			name:       "zero vector left as-is",
+			matryoshka: false,
+			dimensions: 3,
+			embedding:  []float32{0, 0, 0},
+			want:       []float32{0, 0, 0},
+		},
+		{
+			name:       "matryoshka truncates then renormalizes",
+			matryoshka: true,
+			dimensions: 2,
+			embedding:  []float32{3, 4, 12},
+			want:       []float32{0.6, 0.8},
+		},
+		{
+			name:       "matryoshka exact dims accepted",
+			matryoshka: true,
+			dimensions: 3,
+			embedding:  []float32{0, 5, 0},
+			want:       []float32{0, 1, 0},
+		},
+		{
+			name:       "longer rejected when matryoshka off",
+			matryoshka: false,
+			dimensions: 2,
+			embedding:  []float32{1, 2, 3},
+			want:       nil,
+		},
+		{
+			name:       "shorter rejected when matryoshka on",
+			matryoshka: true,
+			dimensions: 4,
+			embedding:  []float32{1, 2, 3},
+			want:       nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				resp := embeddingResponse{
+					Data: []struct {
+						Embedding []float32 `json:"embedding"`
+						Index     int       `json:"index"`
+					}{
+						{Embedding: tt.embedding, Index: 0},
+					},
+				}
+				if err := json.NewEncoder(w).Encode(resp); err != nil {
+					t.Fatal(err)
+				}
+			}))
+			defer server.Close()
+
+			client := NewClient(server.URL, "", "model", tt.dimensions, false, tt.matryoshka)
+			got, err := client.Embed(context.Background(), "test")
+			if tt.want == nil {
+				if err == nil {
+					t.Fatal("expected dimension mismatch error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %d dimensions, want %d", len(got), len(tt.want))
+			}
+			for i := range tt.want {
+				if math.Abs(float64(got[i]-tt.want[i])) > 1e-6 {
+					t.Fatalf("embedding = %v, want %v", got, tt.want)
+				}
+			}
+		})
 	}
 }

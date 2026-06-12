@@ -9,6 +9,13 @@ model = "qwen3-embedding:4b"
 dimensions = 1024
 batch_size = 50
 send_dimensions = true
+# Vector storage type: "int8" (~4x smaller index) or "float32".
+# Changing this re-embeds all indexed folders.
+quantization = "int8"
+# Accept API vectors longer than `dimensions`, truncate and renormalize
+# (Matryoshka embeddings). For providers that ignore the dimensions
+# parameter, e.g. Ollama. When false, a length mismatch is an error.
+matryoshka = false
 
 [search]
 # Reciprocal Rank Fusion constant (higher = more weight to top-ranked results)

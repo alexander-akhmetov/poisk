@@ -44,13 +44,13 @@ func newTestStackWithEmbedURL(t *testing.T, embedURL string, dims int) *testStac
 	}
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := store.Open(dbPath, dims)
+	db, err := store.Open(dbPath, dims, cfg.Embedding.Quantization)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
 
-	client := embed.NewClient(embedURL, "", cfg.Embedding.Model, dims, false)
+	client := embed.NewClient(embedURL, "", cfg.Embedding.Model, dims, false, false)
 	indexer := index.NewIndexer(db, client, &cfg)
 	searcher := search.NewSearcher(db, client, &cfg, nil)
 
@@ -89,7 +89,7 @@ func BinarySearch(data []int, target int) int {
 
 	// Now create a searcher that points to a broken embed server.
 	brokenSrv := newBrokenEmbedServer(t)
-	brokenClient := embed.NewClient(brokenSrv.URL, "", "test-model", dims, false)
+	brokenClient := embed.NewClient(brokenSrv.URL, "", "test-model", dims, false, false)
 	brokenSearcher := search.NewSearcher(ts.DB, brokenClient, ts.Cfg, nil)
 
 	// Hybrid search: vec will fail, but FTS should still produce results.
@@ -156,13 +156,13 @@ func TestSearchContextAnnotation(t *testing.T) {
 	}
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := store.Open(dbPath, dims)
+	db, err := store.Open(dbPath, dims, cfg.Embedding.Quantization)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
 
-	client := embed.NewClient(embedSrv.URL, "", cfg.Embedding.Model, dims, false)
+	client := embed.NewClient(embedSrv.URL, "", cfg.Embedding.Model, dims, false, false)
 	indexer := index.NewIndexer(db, client, &cfg)
 	searcher := search.NewSearcher(db, client, &cfg, nil)
 

@@ -78,13 +78,13 @@ func newTestIndexer(t *testing.T, folder, baseURL string) (*Indexer, *store.Stor
 	}
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := store.Open(dbPath, cfg.Embedding.Dimensions)
+	db, err := store.Open(dbPath, cfg.Embedding.Dimensions, cfg.Embedding.Quantization)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	client := embed.NewClient(cfg.Embedding.BaseURL, "", cfg.Embedding.Model, cfg.Embedding.Dimensions, false)
+	client := embed.NewClient(cfg.Embedding.BaseURL, "", cfg.Embedding.Model, cfg.Embedding.Dimensions, false, false)
 	return NewIndexer(db, client, &cfg), db
 }
 
@@ -321,12 +321,12 @@ func TestIndexAllPrunesRemovedFolders(t *testing.T) {
 	}
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := store.Open(dbPath, cfg.Embedding.Dimensions)
+	db, err := store.Open(dbPath, cfg.Embedding.Dimensions, cfg.Embedding.Quantization)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	client := embed.NewClient(cfg.Embedding.BaseURL, "", cfg.Embedding.Model, cfg.Embedding.Dimensions, false)
+	client := embed.NewClient(cfg.Embedding.BaseURL, "", cfg.Embedding.Model, cfg.Embedding.Dimensions, false, false)
 	indexer := NewIndexer(db, client, &cfg)
 
 	// Write files in both folders
@@ -363,8 +363,73 @@ func TestIndexAllPrunesRemovedFolders(t *testing.T) {
 	}
 
 	// Verify meta is cleared too
-	mc, _ := db.ModelChanged(dir2, "test-embedding", 3)
+	mc, _ := db.ModelChanged(dir2, "test-embedding", 3, cfg.Embedding.Quantization)
 	if !mc.Changed {
 		t.Fatal("expected meta cleared for pruned folder")
+	}
+}
+
+func TestIndexFolderRebuildsOnQuantizationChange(t *testing.T) {
+	folder, _ := filepath.EvalSymlinks(t.TempDir())
+
+	server := newTestEmbeddingServer(t, 3, 0)
+	defer server.Close()
+
+	cfg := config.DefaultConfig()
+	cfg.Embedding.BaseURL = server.URL
+	cfg.Embedding.Model = "test-embedding"
+	cfg.Embedding.Dimensions = 3
+	cfg.Embedding.BatchSize = 16
+	cfg.Index.MaxFileSizeKB = 1024
+	cfg.Folders = []config.FolderConfig{
+		{Path: folder, Description: "test"},
+	}
+
+	writeFileWithMtime(t, filepath.Join(folder, "a.txt"), "this line is long enough to be indexed as one chunk", time.Unix(1_700_000_000, 0))
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := store.Open(dbPath, cfg.Embedding.Dimensions, cfg.Embedding.Quantization)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	if !db.VecAvailable() {
+		_ = db.Close()
+		t.Skip("vec0 not available")
+	}
+	client := embed.NewClient(cfg.Embedding.BaseURL, "", cfg.Embedding.Model, cfg.Embedding.Dimensions, false, false)
+
+	stats, err := NewIndexer(db, client, &cfg).IndexFolder(context.Background(), folder)
+	if err != nil {
+		t.Fatalf("first index: %v", err)
+	}
+	if stats.FilesProcessed == 0 {
+		t.Fatal("expected file processed on first index")
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+
+	// Reopen with float32 and reindex — the unchanged file must be re-embedded
+	cfg.Embedding.Quantization = "float32"
+	db2, err := store.Open(dbPath, cfg.Embedding.Dimensions, cfg.Embedding.Quantization)
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	t.Cleanup(func() { _ = db2.Close() })
+
+	stats, err = NewIndexer(db2, client, &cfg).IndexFolder(context.Background(), folder)
+	if err != nil {
+		t.Fatalf("reindex: %v", err)
+	}
+	if stats.FilesProcessed == 0 {
+		t.Fatal("expected re-embed after quantization change, file was skipped")
+	}
+
+	var vecCount int
+	if err := db2.DB().QueryRow("SELECT COUNT(*) FROM vec_embeddings").Scan(&vecCount); err != nil {
+		t.Fatalf("count vec_embeddings: %v", err)
+	}
+	if vecCount == 0 {
+		t.Fatal("expected vec embeddings after rebuild")
 	}
 }

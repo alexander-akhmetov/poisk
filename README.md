@@ -43,6 +43,7 @@ At query time, both results are merged with Reciprocal Rank Fusion — so you ge
 - **Markdown chunking** — heading-aware sections with breadcrumb paths, fence-aware splitting
 - **Incremental indexing** — tracks file mtimes, only re-embeds changed files
 - **Multiple folders** — index and search across multiple configured directories
+- **Compact storage** — vectors stored as int8 by default (~4x smaller index), optional Matryoshka truncation to fewer dimensions
 
 ## Manual install
 
@@ -85,6 +86,8 @@ api_key = "sk-..."
 model = "text-embedding-3-small"
 dimensions = 1536
 ```
+
+Vectors are stored int8-quantized by default, which makes the index about 4x smaller at a small recall cost; set `quantization = "float32"` to keep full-precision vectors. With `matryoshka = true`, vectors longer than `dimensions` are truncated and renormalized — useful with Matryoshka-trained models (like qwen3-embedding) on providers that ignore the `dimensions` parameter, such as Ollama. Changing `quantization` re-embeds all indexed folders.
 
 See [config.example.toml](config.example.toml) for all options, or the full [configuration reference](skills/setup/SKILL.md).
 

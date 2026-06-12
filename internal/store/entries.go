@@ -67,7 +67,7 @@ func (s *Store) InsertEntries(source, filePath string, entries []Entry) error {
 		}
 
 		if s.vecAvailable {
-			if _, err := tx.Exec("INSERT INTO vec_embeddings (rowid, embedding) VALUES (?, ?)", rowid, blob); err != nil {
+			if _, err := tx.Exec("INSERT INTO vec_embeddings (rowid, embedding) VALUES (?, "+s.VecValueExpr()+")", rowid, blob); err != nil {
 				return fmt.Errorf("vec0 sync insert: %w", err)
 			}
 		}

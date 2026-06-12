@@ -208,7 +208,7 @@ func TestEvalRecallAndMRR(t *testing.T) {
 	cfg.Embedding.BaseURL = embeddingServer.URL
 
 	dbPath := filepath.Join(t.TempDir(), "eval.db")
-	db, err := store.Open(dbPath, cfg.Embedding.Dimensions)
+	db, err := store.Open(dbPath, cfg.Embedding.Dimensions, cfg.Embedding.Quantization)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -223,6 +223,7 @@ func TestEvalRecallAndMRR(t *testing.T) {
 		cfg.Embedding.Model,
 		cfg.Embedding.Dimensions,
 		cfg.Embedding.SendDimensions,
+		cfg.Embedding.Matryoshka,
 	)
 	indexer := index.NewIndexer(db, client, &cfg)
 	searcher := NewSearcher(db, client, &cfg, nil)

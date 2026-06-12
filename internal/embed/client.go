@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"time"
 )
@@ -16,16 +17,18 @@ type Client struct {
 	model          string
 	dimensions     int
 	sendDimensions bool
+	matryoshka     bool
 	http           *http.Client
 }
 
-func NewClient(baseURL, apiKey, model string, dimensions int, sendDimensions bool) *Client {
+func NewClient(baseURL, apiKey, model string, dimensions int, sendDimensions, matryoshka bool) *Client {
 	return &Client{
 		baseURL:        baseURL,
 		apiKey:         apiKey,
 		model:          model,
 		dimensions:     dimensions,
 		sendDimensions: sendDimensions,
+		matryoshka:     matryoshka,
 		http:           &http.Client{Timeout: 600 * time.Second},
 	}
 }
@@ -91,9 +94,14 @@ func (c *Client) EmbedBatch(ctx context.Context, texts []string) ([][]float32, e
 		if d.Index >= len(embeddings) {
 			return nil, fmt.Errorf("unexpected index %d in response", d.Index)
 		}
-		if len(d.Embedding) != c.dimensions {
+		switch {
+		case len(d.Embedding) == c.dimensions:
+		case c.matryoshka && len(d.Embedding) > c.dimensions:
+			d.Embedding = d.Embedding[:c.dimensions]
+		default:
 			return nil, fmt.Errorf("dimension mismatch: got %d, want %d", len(d.Embedding), c.dimensions)
 		}
+		normalize(d.Embedding)
 		embeddings[d.Index] = d.Embedding
 	}
 
@@ -112,4 +120,22 @@ func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
 		return nil, err
 	}
 	return batch[0], nil
+}
+
+// normalize L2-normalizes v in place. Unit norm keeps every component within
+// [-1, 1], which 'unit' int8 quantization requires (it does not clamp).
+// Truncated Matryoshka prefixes are not unit-norm, so this must run after
+// truncation. Zero vectors are left unchanged.
+func normalize(v []float32) {
+	var sum float64
+	for _, x := range v {
+		sum += float64(x) * float64(x)
+	}
+	if sum == 0 {
+		return
+	}
+	norm := math.Sqrt(sum)
+	for i := range v {
+		v[i] = float32(float64(v[i]) / norm)
+	}
 }

@@ -66,6 +66,8 @@ Any OpenAI-compatible embedding API. Defaults to local Ollama with `qwen3-embedd
 | `dimensions` | `1024` | Embedding vector dimensions (qwen3-embedding supports 32–4096) |
 | `batch_size` | `50` | Chunks per embedding request |
 | `send_dimensions` | `true` | Include dimensions parameter in API requests |
+| `quantization` | `"int8"` | Vector storage type: `"int8"` (~4x smaller index) or `"float32"`. Changing it re-embeds all folders |
+| `matryoshka` | `false` | Truncate longer API vectors to `dimensions` and renormalize — for providers that ignore the dimensions parameter (e.g. Ollama) |
 
 Example with OpenAI:
 

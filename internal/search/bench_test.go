@@ -95,13 +95,13 @@ func newBenchStack(b *testing.B, corpusSize int) *benchStack {
 	cfg.Folders = []config.FolderConfig{{Path: corpus, Description: "bench"}}
 
 	dbPath := filepath.Join(b.TempDir(), "bench.db")
-	db, err := store.Open(dbPath, dims)
+	db, err := store.Open(dbPath, dims, cfg.Embedding.Quantization)
 	if err != nil {
 		b.Fatalf("open store: %v", err)
 	}
 	b.Cleanup(func() { db.Close() })
 
-	client := embed.NewClient(cfg.Embedding.BaseURL, "", cfg.Embedding.Model, dims, false)
+	client := embed.NewClient(cfg.Embedding.BaseURL, "", cfg.Embedding.Model, dims, false, false)
 	indexer := index.NewIndexer(db, client, &cfg)
 	searcher := NewSearcher(db, client, &cfg, nil)
 

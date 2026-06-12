@@ -9,7 +9,7 @@ import (
 
 func TestSearchFTSMetadataFilters(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "search-filters.db")
-	s, err := store.Open(dbPath, 3)
+	s, err := store.Open(dbPath, 3, store.QuantizationInt8)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

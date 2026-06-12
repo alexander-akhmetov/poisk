@@ -78,13 +78,13 @@ func newTestStack(t *testing.T) *testStack {
 	}
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	db, err := store.Open(dbPath, dims)
+	db, err := store.Open(dbPath, dims, cfg.Embedding.Quantization)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
 
-	client := embed.NewClient(cfg.Embedding.BaseURL, "", cfg.Embedding.Model, dims, false)
+	client := embed.NewClient(cfg.Embedding.BaseURL, "", cfg.Embedding.Model, dims, false, false)
 	indexer := index.NewIndexer(db, client, &cfg)
 	searcher := search.NewSearcher(db, client, &cfg, nil)
 

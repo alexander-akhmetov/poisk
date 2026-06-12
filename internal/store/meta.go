@@ -7,18 +7,18 @@ import (
 	"github.com/alexander-akhmetov/poisk/internal/domain"
 )
 
-func (s *Store) ModelChanged(source, model string, dimensions int) (domain.ModelChange, error) {
+func (s *Store) ModelChanged(source, model string, dimensions int, quantization string) (domain.ModelChange, error) {
 	var mc domain.ModelChange
 	err := s.db.QueryRow(
-		"SELECT model, dimensions FROM embedding_meta WHERE source = ?", source,
-	).Scan(&mc.OldModel, &mc.OldDims)
+		"SELECT model, dimensions, quantization FROM embedding_meta WHERE source = ?", source,
+	).Scan(&mc.OldModel, &mc.OldDims, &mc.OldQuantization)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.ModelChange{Changed: true}, nil
 		}
 		return mc, err
 	}
-	mc.Changed = mc.OldModel != model || mc.OldDims != dimensions
+	mc.Changed = mc.OldModel != model || mc.OldDims != dimensions || mc.OldQuantization != quantization
 	return mc, nil
 }
 
@@ -39,11 +39,11 @@ func (s *Store) AllSources() ([]string, error) {
 	return sources, rows.Err()
 }
 
-func (s *Store) UpdateMeta(source, model string, dimensions int) error {
+func (s *Store) UpdateMeta(source, model string, dimensions int, quantization string) error {
 	_, err := s.db.Exec(
-		`INSERT INTO embedding_meta (source, model, dimensions) VALUES (?, ?, ?)
-		 ON CONFLICT(source) DO UPDATE SET model = excluded.model, dimensions = excluded.dimensions`,
-		source, model, dimensions,
+		`INSERT INTO embedding_meta (source, model, dimensions, quantization) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(source) DO UPDATE SET model = excluded.model, dimensions = excluded.dimensions, quantization = excluded.quantization`,
+		source, model, dimensions, quantization,
 	)
 	return err
 }

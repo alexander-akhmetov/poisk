@@ -110,7 +110,7 @@ func main() {
 	}
 
 	dbPath := filepath.Join(t.TempDir(), "search-svc.db")
-	db, err := store.Open(dbPath, dims)
+	db, err := store.Open(dbPath, dims, cfg.Embedding.Quantization)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -125,6 +125,7 @@ func main() {
 		cfg.Embedding.Model,
 		cfg.Embedding.Dimensions,
 		cfg.Embedding.SendDimensions,
+		cfg.Embedding.Matryoshka,
 	)
 	indexer := index.NewIndexer(db, embedClient, &cfg)
 	if _, err := indexer.IndexAll(ctx); err != nil {

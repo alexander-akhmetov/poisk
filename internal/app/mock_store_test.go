@@ -119,10 +119,10 @@ func (m *mockChunkStore) TrackedFileCount(source string) (int, error) {
 	return len(m.tracked[source]), nil
 }
 
-func (m *mockChunkStore) ModelChanged(_, _ string, _ int) (domain.ModelChange, error) {
+func (m *mockChunkStore) ModelChanged(_, _ string, _ int, _ string) (domain.ModelChange, error) {
 	return domain.ModelChange{}, nil
 }
-func (m *mockChunkStore) UpdateMeta(_, _ string, _ int) error { return nil }
+func (m *mockChunkStore) UpdateMeta(_, _ string, _ int, _ string) error { return nil }
 
 func (m *mockChunkStore) AllSources() ([]string, error) {
 	sources := make([]string, 0, len(m.tracked))

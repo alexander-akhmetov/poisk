@@ -78,20 +78,20 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 	stats := FolderStats{Folder: folder}
 
 	// Check model change
-	mc, err := ix.store.ModelChanged(folder, ix.cfg.Embedding.Model, ix.cfg.Embedding.Dimensions)
+	mc, err := ix.store.ModelChanged(folder, ix.cfg.Embedding.Model, ix.cfg.Embedding.Dimensions, ix.cfg.Embedding.Quantization)
 	if err != nil {
 		return stats, err
 	}
 	if mc.Changed {
 		slog.Info("model changed, rebuilding",
 			"folder", folder,
-			"old_model", mc.OldModel, "old_dims", mc.OldDims,
-			"new_model", ix.cfg.Embedding.Model, "new_dims", ix.cfg.Embedding.Dimensions)
+			"old_model", mc.OldModel, "old_dims", mc.OldDims, "old_quantization", mc.OldQuantization,
+			"new_model", ix.cfg.Embedding.Model, "new_dims", ix.cfg.Embedding.Dimensions, "new_quantization", ix.cfg.Embedding.Quantization)
 		if err := ix.store.ClearSource(folder); err != nil {
 			return stats, fmt.Errorf("clear source %s: %w", folder, err)
 		}
 		// Write meta early so interrupted re-indexing resumes incrementally
-		if err := ix.store.UpdateMeta(folder, ix.cfg.Embedding.Model, ix.cfg.Embedding.Dimensions); err != nil {
+		if err := ix.store.UpdateMeta(folder, ix.cfg.Embedding.Model, ix.cfg.Embedding.Dimensions, ix.cfg.Embedding.Quantization); err != nil {
 			return stats, fmt.Errorf("update meta for %s: %w", folder, err)
 		}
 	}
@@ -177,7 +177,7 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 	slog.Info("folder done", "folder", folder, "processed", stats.FilesProcessed, "skipped", stats.FilesSkipped, "chunks", stats.ChunksCreated, "errors", stats.Errors)
 
 	// Update meta
-	if err := ix.store.UpdateMeta(folder, ix.cfg.Embedding.Model, ix.cfg.Embedding.Dimensions); err != nil {
+	if err := ix.store.UpdateMeta(folder, ix.cfg.Embedding.Model, ix.cfg.Embedding.Dimensions, ix.cfg.Embedding.Quantization); err != nil {
 		return stats, fmt.Errorf("update meta for %s: %w", folder, err)
 	}
 

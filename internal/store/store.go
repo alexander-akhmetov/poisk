@@ -21,9 +21,10 @@ type Store struct {
 	vecAvailable bool
 	ftsAvailable bool
 	dimensions   int
+	quantization string
 }
 
-func Open(dbPath string, dimensions int) (*Store, error) {
+func Open(dbPath string, dimensions int, quantization string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
@@ -33,7 +34,7 @@ func Open(dbPath string, dimensions int) (*Store, error) {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 
-	s := &Store{db: db, dimensions: dimensions}
+	s := &Store{db: db, dimensions: dimensions, quantization: quantization}
 
 	if err := s.initSchema(); err != nil {
 		db.Close()
@@ -124,12 +125,13 @@ func (s *Store) dropAllTables() {
 
 func (s *Store) initVec0() {
 	needsDrop := false
-	rows, err := s.db.Query("SELECT DISTINCT dimensions FROM embedding_meta")
+	rows, err := s.db.Query("SELECT DISTINCT dimensions, quantization FROM embedding_meta")
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
 			var storedDims int
-			if rows.Scan(&storedDims) == nil && storedDims != s.dimensions {
+			var storedQuant string
+			if rows.Scan(&storedDims, &storedQuant) == nil && (storedDims != s.dimensions || storedQuant != s.quantization) {
 				needsDrop = true
 				break
 			}
@@ -139,17 +141,18 @@ func (s *Store) initVec0() {
 		}
 	}
 	if needsDrop {
-		slog.Info("vec0 dimensions mismatch, recreating", "new", s.dimensions)
+		slog.Info("vec0 dimensions or quantization mismatch, recreating",
+			"new_dims", s.dimensions, "new_quantization", s.quantization)
 		if _, err := s.db.Exec("DROP TABLE IF EXISTS vec_embeddings"); err != nil {
 			slog.Warn("failed to drop vec_embeddings", "error", err)
 		}
 		// Clear stale meta so mismatch isn't re-detected on next startup
-		if _, err := s.db.Exec("DELETE FROM embedding_meta WHERE dimensions != ?", s.dimensions); err != nil {
+		if _, err := s.db.Exec("DELETE FROM embedding_meta WHERE dimensions != ? OR quantization != ?", s.dimensions, s.quantization); err != nil {
 			slog.Warn("failed to clean stale embedding_meta", "error", err)
 		}
 	}
 
-	if _, err := s.db.Exec(vec0DDL(s.dimensions)); err != nil {
+	if _, err := s.db.Exec(vec0DDL(s.dimensions, s.quantization)); err != nil {
 		slog.Warn("vec0 not available", "error", err)
 		return
 	}
@@ -195,6 +198,18 @@ func (s *Store) Close() error {
 func (s *Store) VecAvailable() bool { return s.vecAvailable }
 func (s *Store) FTSAvailable() bool { return s.ftsAvailable }
 func (s *Store) DB() *sql.DB        { return s.db }
+
+// VecValueExpr returns the SQL expression that converts a bound float32 blob
+// into the vec0 column's element type, for both INSERT values and MATCH
+// operands. vec0 dispatches on value subtype: a plain blob parameter is always
+// parsed as float32, so int8 columns need the blob wrapped in
+// vec_quantize_int8, which quantizes and tags the result with the int8 subtype.
+func (s *Store) VecValueExpr() string {
+	if s.quantization == QuantizationInt8 {
+		return "vec_quantize_int8(?, 'unit')"
+	}
+	return "?"
+}
 
 func splitStatements(ddl string) []string {
 	var stmts []string

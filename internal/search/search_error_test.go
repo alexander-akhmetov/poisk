@@ -24,7 +24,7 @@ func testSearchConfig(dims int) config.Config {
 
 func TestSearchReturnsPartialResultsWhenVecFails(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "search-partial-failure.db")
-	s, err := store.Open(dbPath, 3)
+	s, err := store.Open(dbPath, 3, store.QuantizationInt8)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -55,6 +55,7 @@ func TestSearchReturnsPartialResultsWhenVecFails(t *testing.T) {
 		cfg.Embedding.Model,
 		cfg.Embedding.Dimensions,
 		cfg.Embedding.SendDimensions,
+		cfg.Embedding.Matryoshka,
 	)
 	searcher := NewSearcher(s, client, &cfg, nil)
 
@@ -72,7 +73,7 @@ func TestSearchReturnsPartialResultsWhenVecFails(t *testing.T) {
 
 func TestSearchReturnsVecFailureWhenFTSModeIsDisabled(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "search-vec-only-failure.db")
-	s, err := store.Open(dbPath, 3)
+	s, err := store.Open(dbPath, 3, store.QuantizationInt8)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -87,6 +88,7 @@ func TestSearchReturnsVecFailureWhenFTSModeIsDisabled(t *testing.T) {
 		cfg.Embedding.Model,
 		cfg.Embedding.Dimensions,
 		cfg.Embedding.SendDimensions,
+		cfg.Embedding.Matryoshka,
 	)
 	searcher := NewSearcher(s, client, &cfg, nil)
 
@@ -104,7 +106,7 @@ func TestSearchReturnsVecFailureWhenFTSModeIsDisabled(t *testing.T) {
 
 func TestSearchReturnsFTSFailureWhenVecModeIsDisabled(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "search-fts-only-failure.db")
-	s, err := store.Open(dbPath, 3)
+	s, err := store.Open(dbPath, 3, store.QuantizationInt8)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -122,6 +124,7 @@ func TestSearchReturnsFTSFailureWhenVecModeIsDisabled(t *testing.T) {
 		cfg.Embedding.Model,
 		cfg.Embedding.Dimensions,
 		cfg.Embedding.SendDimensions,
+		cfg.Embedding.Matryoshka,
 	)
 	searcher := NewSearcher(s, client, &cfg, nil)
 
@@ -143,7 +146,7 @@ func TestSearchReturnsFTSFailureWhenVecModeIsDisabled(t *testing.T) {
 
 func TestSearchReturnsCombinedBackendFailure(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "search-all-failure.db")
-	s, err := store.Open(dbPath, 3)
+	s, err := store.Open(dbPath, 3, store.QuantizationInt8)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -161,6 +164,7 @@ func TestSearchReturnsCombinedBackendFailure(t *testing.T) {
 		cfg.Embedding.Model,
 		cfg.Embedding.Dimensions,
 		cfg.Embedding.SendDimensions,
+		cfg.Embedding.Matryoshka,
 	)
 	searcher := NewSearcher(s, client, &cfg, nil)
 

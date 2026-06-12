@@ -50,7 +50,7 @@ func execVecQuery(s *store.Store, queryBlob []byte, topK, fetchLimit int, folder
 	query := `SELECT e.file_path, e.line_num, e.end_line, e.chunk_text, v.distance, e.folder, e.language, e.chunk_kind, e.symbol
 		FROM vec_embeddings v
 		JOIN embeddings e ON e.id = v.rowid
-		WHERE v.embedding MATCH ? AND k = ?`
+		WHERE v.embedding MATCH ` + s.VecValueExpr() + ` AND k = ?`
 	args := []any{queryBlob, fetchLimit}
 
 	query, args = appendInClause(query, args, "e.source", folders)

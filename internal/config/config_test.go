@@ -34,6 +34,12 @@ func TestDefaultConfigHasFusionWeights(t *testing.T) {
 	if cfg.Search.MinScore < 0 {
 		t.Fatalf("default min_score must be >= 0, got %v", cfg.Search.MinScore)
 	}
+	if cfg.Embedding.Quantization != "int8" {
+		t.Fatalf("default quantization must be int8, got %q", cfg.Embedding.Quantization)
+	}
+	if cfg.Embedding.Matryoshka {
+		t.Fatal("default matryoshka must be off")
+	}
 }
 
 func TestValidateRejectsInvalidFusionWeights(t *testing.T) {
@@ -104,6 +110,16 @@ func TestValidateRejectsInvalidFusionWeights(t *testing.T) {
 			name: "min_score Inf",
 			edit: func(c *Config) { c.Search.MinScore = math.Inf(1) },
 			want: "search.min_score",
+		},
+		{
+			name: "invalid quantization",
+			edit: func(c *Config) { c.Embedding.Quantization = "int4" },
+			want: "embedding.quantization",
+		},
+		{
+			name: "empty quantization",
+			edit: func(c *Config) { c.Embedding.Quantization = "" },
+			want: "embedding.quantization",
 		},
 	}
 
