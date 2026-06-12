@@ -1,7 +1,10 @@
 package search
 
 import (
+	"path/filepath"
 	"testing"
+
+	"github.com/alexander-akhmetov/poisk/internal/store"
 )
 
 func TestTokenize(t *testing.T) {
@@ -233,5 +236,45 @@ func TestCombineFTSQuery(t *testing.T) {
 				t.Fatalf("combineFTSQuery(%q, %q) = %q, want %q", tt.text, tt.metadata, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestQueryFTSNullFolder(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "nullfolder.db")
+	s, err := store.Open(dbPath, 3, store.QuantizationInt8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	if !s.FTSAvailable() {
+		t.Skip("FTS5 not available")
+	}
+
+	// Pre-existing rows can hold a NULL folder; insert one directly and index it.
+	if _, err := s.DB().Exec(
+		"INSERT INTO embeddings (source, file_path, line_num, chunk_text, folder, end_line, language, chunk_kind, symbol) VALUES ('src', 'a.go', 3, 'nullfolderprobe text', NULL, 7, 'go', 'function_declaration', 'probe')",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB().Exec("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')"); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := queryFTS(s, `"nullfolderprobe"`, 10, nil)
+	if err != nil {
+		t.Fatalf("queryFTS: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1", len(results))
+	}
+	r := results[0]
+	if r.Folder != "" {
+		t.Errorf("folder = %q, want empty string for NULL folder", r.Folder)
+	}
+	if r.LineNum != 3 || r.EndLine != 7 {
+		t.Errorf("lines = %d-%d, want 3-7", r.LineNum, r.EndLine)
+	}
+	if r.Text != "nullfolderprobe text" {
+		t.Errorf("text = %q, want %q", r.Text, "nullfolderprobe text")
 	}
 }

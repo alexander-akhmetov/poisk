@@ -2,7 +2,7 @@ package store
 
 import "strconv"
 
-const schemaVersion = 5
+const schemaVersion = 6
 
 // Quantization modes for vec0 vector storage.
 const (
@@ -63,4 +63,8 @@ func vec0DDL(dims int, quantization string) string {
 	return `CREATE VIRTUAL TABLE IF NOT EXISTS vec_embeddings USING vec0(embedding ` + elem + `[` + strconv.Itoa(dims) + `] distance_metric=cosine)`
 }
 
-const fts5DDL = `CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(chunk_text, id UNINDEXED, source UNINDEXED, file_path UNINDEXED, line_num UNINDEXED, folder UNINDEXED, end_line UNINDEXED, language, chunk_kind, symbol)`
+// chunks_fts is an external-content table: chunk text lives only in
+// embeddings, the FTS table keeps just the inverted index. Writers must keep
+// the index in sync manually (see deleteFTSRows and the insert in
+// InsertEntries).
+const fts5DDL = `CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(chunk_text, source UNINDEXED, file_path UNINDEXED, line_num UNINDEXED, folder UNINDEXED, end_line UNINDEXED, language, chunk_kind, symbol, content='embeddings', content_rowid='id')`

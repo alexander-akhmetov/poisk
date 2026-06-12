@@ -1,6 +1,9 @@
 package store
 
-import "fmt"
+import (
+	"database/sql"
+	"fmt"
+)
 
 type Entry struct {
 	Source    string
@@ -13,6 +16,17 @@ type Entry struct {
 	Language  string
 	Kind      string
 	Symbol    string
+}
+
+// deleteFTSRows unindexes embeddings rows matching cond using the FTS5
+// 'delete' command. External-content tables need the old column values to
+// remove index entries, so this must run before the matching DELETE FROM
+// embeddings in the same transaction.
+func deleteFTSRows(tx *sql.Tx, cond string, args ...any) error {
+	_, err := tx.Exec(`INSERT INTO chunks_fts(chunks_fts, rowid, chunk_text, source, file_path, line_num, folder, end_line, language, chunk_kind, symbol)
+		SELECT 'delete', id, chunk_text, source, file_path, line_num, folder, end_line, language, chunk_kind, symbol
+		FROM embeddings WHERE `+cond, args...)
+	return err
 }
 
 func (s *Store) InsertEntries(source, filePath string, entries []Entry) error {
@@ -32,12 +46,9 @@ func (s *Store) InsertEntries(source, filePath string, entries []Entry) error {
 		}
 	}
 
-	// Delete FTS5 rows
+	// Delete FTS5 rows (needs old values, must precede the embeddings DELETE)
 	if s.ftsAvailable {
-		if _, err := tx.Exec(
-			"DELETE FROM chunks_fts WHERE source = ? AND file_path = ?",
-			source, filePath,
-		); err != nil {
+		if err := deleteFTSRows(tx, "source = ? AND file_path = ?", source, filePath); err != nil {
 			return fmt.Errorf("FTS5 sync delete: %w", err)
 		}
 	}
@@ -74,9 +85,8 @@ func (s *Store) InsertEntries(source, filePath string, entries []Entry) error {
 
 		if s.ftsAvailable {
 			if _, err := tx.Exec(
-				"INSERT INTO chunks_fts(chunk_text, id, source, file_path, line_num, folder, end_line, language, chunk_kind, symbol) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-				e.Text, fmt.Sprintf("%d", rowid), source, filePath, fmt.Sprintf("%d", e.LineNum), e.Folder,
-				fmt.Sprintf("%d", e.EndLine), e.Language, e.Kind, e.Symbol,
+				"INSERT INTO chunks_fts(rowid, chunk_text, source, file_path, line_num, folder, end_line, language, chunk_kind, symbol) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+				rowid, e.Text, source, filePath, e.LineNum, e.Folder, e.EndLine, e.Language, e.Kind, e.Symbol,
 			); err != nil {
 				return fmt.Errorf("FTS5 sync insert: %w", err)
 			}
@@ -131,7 +141,7 @@ func (s *Store) ClearSource(source string) error {
 		}
 	}
 	if s.ftsAvailable {
-		if _, err := tx.Exec("DELETE FROM chunks_fts WHERE source = ?", source); err != nil {
+		if err := deleteFTSRows(tx, "source = ?", source); err != nil {
 			return fmt.Errorf("clear chunks_fts: %w", err)
 		}
 	}

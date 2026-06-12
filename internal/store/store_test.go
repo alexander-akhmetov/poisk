@@ -310,47 +310,209 @@ func TestDBPathCreation(t *testing.T) {
 	}
 }
 
-func TestSchemaVersionMigrationDropsOldData(t *testing.T) {
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "migrate.db")
+func TestSchemaVersionMigration(t *testing.T) {
+	// The chunks_fts layout before v6: own content storage, id column.
+	const v5FTSDDL = `CREATE VIRTUAL TABLE chunks_fts USING fts5(chunk_text, id UNINDEXED, source UNINDEXED, file_path UNINDEXED, line_num UNINDEXED, folder UNINDEXED, end_line UNINDEXED, language, chunk_kind, symbol)`
+
+	tests := []struct {
+		name          string
+		storedVersion int
+		wantCount     int // surviving embeddings/vec/fts rows after migration
+	}{
+		{
+			name:          "older version drops all data",
+			storedVersion: schemaVersion - 2,
+			wantCount:     0,
+		},
+		{
+			name:          "v5 to v6 keeps data and rebuilds fts",
+			storedVersion: 5,
+			wantCount:     1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dbPath := filepath.Join(t.TempDir(), "migrate.db")
+
+			s := openTestStoreAt(t, dbPath)
+			ftsAvailable := s.FTSAvailable()
+			if err := s.SetFileMtime("src", "main.go", 12345); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.InsertEntries("src", "main.go", []Entry{
+				{LineNum: 1, EndLine: 1, Text: "func old()", Embedding: []float32{1, 0, 0}, Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "old"},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Close(); err != nil {
+				t.Fatalf("close store: %v", err)
+			}
+
+			db, err := sql.Open("sqlite3", dbPath)
+			if err != nil {
+				t.Fatalf("open sqlite: %v", err)
+			}
+			if _, err := db.Exec("UPDATE schema_version SET version = ?", tt.storedVersion); err != nil {
+				db.Close()
+				t.Fatalf("downgrade schema_version: %v", err)
+			}
+			// Recreate chunks_fts with the pre-v6 layout so the migration runs
+			// against the real old shape.
+			if ftsAvailable {
+				if _, err := db.Exec("DROP TABLE chunks_fts"); err != nil {
+					db.Close()
+					t.Fatalf("drop chunks_fts: %v", err)
+				}
+				if _, err := db.Exec(v5FTSDDL); err != nil {
+					db.Close()
+					t.Fatalf("create v5 chunks_fts: %v", err)
+				}
+				if _, err := db.Exec(`INSERT INTO chunks_fts(chunk_text, id, source, file_path, line_num, folder, end_line, language, chunk_kind, symbol)
+					SELECT chunk_text, CAST(id AS TEXT), source, file_path, CAST(line_num AS TEXT), COALESCE(folder, ''), CAST(end_line AS TEXT), language, chunk_kind, symbol
+					FROM embeddings`); err != nil {
+					db.Close()
+					t.Fatalf("populate v5 chunks_fts: %v", err)
+				}
+			}
+			if err := db.Close(); err != nil {
+				t.Fatalf("close sqlite: %v", err)
+			}
+
+			s2 := openTestStoreAt(t, dbPath)
+			count, err := s2.Count("src")
+			if err != nil {
+				t.Fatalf("count after migration: %v", err)
+			}
+			if count != tt.wantCount {
+				t.Fatalf("embeddings count=%d, want %d", count, tt.wantCount)
+			}
+
+			if s2.VecAvailable() {
+				var vecCount int
+				if err := s2.DB().QueryRow("SELECT COUNT(*) FROM vec_embeddings").Scan(&vecCount); err != nil {
+					t.Fatalf("count vec_embeddings: %v", err)
+				}
+				if vecCount != tt.wantCount {
+					t.Fatalf("vec_embeddings count=%d, want %d", vecCount, tt.wantCount)
+				}
+			}
+
+			_, ok, err := s2.GetFileMtime("src", "main.go")
+			if err != nil {
+				t.Fatalf("get mtime after migration: %v", err)
+			}
+			if wantMtime := tt.wantCount > 0; ok != wantMtime {
+				t.Fatalf("mtime present=%v, want %v", ok, wantMtime)
+			}
+
+			if s2.FTSAvailable() {
+				var ftsCount int
+				if err := s2.DB().QueryRow("SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'old'").Scan(&ftsCount); err != nil {
+					t.Fatalf("fts match after migration: %v", err)
+				}
+				if ftsCount != tt.wantCount {
+					t.Fatalf("fts match count=%d, want %d", ftsCount, tt.wantCount)
+				}
+			}
+
+			var version int
+			if err := s2.DB().QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&version); err != nil {
+				t.Fatalf("read schema_version: %v", err)
+			}
+			if version != schemaVersion {
+				t.Fatalf("schema_version=%d, want %d", version, schemaVersion)
+			}
+		})
+	}
+}
+
+func TestFTSMigrationDeferredWhenDropFails(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "deferred.db")
 
 	s := openTestStoreAt(t, dbPath)
+	if !s.FTSAvailable() {
+		t.Skip("FTS5 not available")
+	}
 	if err := s.InsertEntries("src", "main.go", []Entry{
 		{LineNum: 1, EndLine: 1, Text: "func old()", Embedding: []float32{1, 0, 0}, Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "old"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
-		t.Fatalf("close store: %v", err)
+		t.Fatal(err)
 	}
 
+	// A build without FTS5 cannot drop the old fts5 virtual table because its
+	// module is missing. A view of the same name makes DROP TABLE fail the
+	// same way inside an FTS5-enabled test binary.
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatal(err)
 	}
-	if _, err := db.Exec("UPDATE schema_version SET version = ?", schemaVersion-1); err != nil {
+	if _, err := db.Exec("UPDATE schema_version SET version = 5"); err != nil {
 		db.Close()
-		t.Fatalf("downgrade schema_version: %v", err)
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("DROP TABLE chunks_fts"); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("CREATE VIEW chunks_fts AS SELECT 1 AS chunk_text"); err != nil {
+		db.Close()
+		t.Fatal(err)
 	}
 	if err := db.Close(); err != nil {
-		t.Fatalf("close sqlite: %v", err)
+		t.Fatal(err)
 	}
 
+	// Open must succeed despite the failed drop, keeping the version at 5 and
+	// the data intact so a later FTS5-enabled run can retry the migration.
 	s2 := openTestStoreAt(t, dbPath)
-	count, err := s2.Count("src")
-	if err != nil {
-		t.Fatalf("count after migration: %v", err)
-	}
-	if count != 0 {
-		t.Fatalf("expected full reindex reset (count=0), got %d", count)
-	}
-
 	var version int
 	if err := s2.DB().QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&version); err != nil {
-		t.Fatalf("read schema_version: %v", err)
+		t.Fatal(err)
+	}
+	if version != 5 {
+		t.Fatalf("schema_version=%d after deferred migration, want 5", version)
+	}
+	count, err := s2.Count("src")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("embeddings count=%d, want 1", count)
+	}
+	if err := s2.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Once the old table can be dropped, the retried migration completes.
+	db, err = sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("DROP VIEW chunks_fts"); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s3 := openTestStoreAt(t, dbPath)
+	if err := s3.DB().QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&version); err != nil {
+		t.Fatal(err)
 	}
 	if version != schemaVersion {
-		t.Fatalf("schema_version=%d, want %d", version, schemaVersion)
+		t.Fatalf("schema_version=%d after retried migration, want %d", version, schemaVersion)
+	}
+	var ftsCount int
+	if err := s3.DB().QueryRow("SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'old'").Scan(&ftsCount); err != nil {
+		t.Fatal(err)
+	}
+	if ftsCount != 1 {
+		t.Fatalf("fts match count=%d after retried migration, want 1", ftsCount)
 	}
 }
 
@@ -835,6 +997,18 @@ func TestFTSMetadataColumnsAreIndexedAndSearchable(t *testing.T) {
 	if strings.Contains(ddl, "symbol UNINDEXED") {
 		t.Fatalf("symbol must be indexed in chunks_fts: %s", ddl)
 	}
+	if !strings.Contains(ddl, "content='embeddings'") || !strings.Contains(ddl, "content_rowid='id'") {
+		t.Fatalf("chunks_fts must use external content from embeddings: %s", ddl)
+	}
+
+	// External content means no shadow table duplicating chunk_text.
+	var contentTables int
+	if err := s.DB().QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE name='chunks_fts_content'").Scan(&contentTables); err != nil {
+		t.Fatal(err)
+	}
+	if contentTables != 0 {
+		t.Fatal("chunks_fts_content shadow table exists; chunk_text is stored twice")
+	}
 
 	if err := s.InsertEntries("src", "main.go", []Entry{
 		{
@@ -864,5 +1038,99 @@ func TestFTSMetadataColumnsAreIndexedAndSearchable(t *testing.T) {
 		if count == 0 {
 			t.Fatalf("expected FTS metadata match for query %q", q)
 		}
+	}
+}
+
+func TestInsertEntriesReplacesFTSRows(t *testing.T) {
+	s := openTestStore(t)
+	if !s.FTSAvailable() {
+		t.Skip("FTS5 not available")
+	}
+
+	if err := s.InsertEntries("src", "main.go", []Entry{
+		{LineNum: 1, EndLine: 2, Text: "alpha bravo", Embedding: []float32{1, 0, 0}, Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "alpha"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.InsertEntries("src", "main.go", []Entry{
+		{LineNum: 1, EndLine: 2, Text: "charlie delta", Embedding: []float32{0, 1, 0}, Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "charlie"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	matchCount := func(q string) int {
+		t.Helper()
+		var n int
+		if err := s.DB().QueryRow("SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH ?", q).Scan(&n); err != nil {
+			t.Fatalf("fts match %q: %v", q, err)
+		}
+		return n
+	}
+
+	if n := matchCount("bravo"); n != 0 {
+		t.Fatalf("stale FTS rows after reindex: match 'bravo' = %d, want 0", n)
+	}
+	if n := matchCount("charlie"); n != 1 {
+		t.Fatalf("match 'charlie' = %d, want 1", n)
+	}
+
+	// The full text must still come back through the external content table.
+	var text string
+	if err := s.DB().QueryRow("SELECT chunk_text FROM chunks_fts WHERE chunks_fts MATCH 'charlie'").Scan(&text); err != nil {
+		t.Fatal(err)
+	}
+	if text != "charlie delta" {
+		t.Fatalf("chunk_text = %q, want %q", text, "charlie delta")
+	}
+
+	// COUNT(*) on the FTS table reads from embeddings, so compare the docsize
+	// shadow table to catch a desynced index.
+	var idxCount, embCount int
+	if err := s.DB().QueryRow("SELECT COUNT(*) FROM chunks_fts_docsize").Scan(&idxCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DB().QueryRow("SELECT COUNT(*) FROM embeddings").Scan(&embCount); err != nil {
+		t.Fatal(err)
+	}
+	if idxCount != embCount {
+		t.Fatalf("fts index rows=%d, embeddings rows=%d; index out of sync", idxCount, embCount)
+	}
+}
+
+func TestBackfillRebuildsEmptyFTSIndex(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "backfill.db")
+	s := openTestStoreAt(t, dbPath)
+	if !s.FTSAvailable() {
+		t.Skip("FTS5 not available")
+	}
+
+	if err := s.InsertEntries("src", "main.go", []Entry{
+		{LineNum: 1, EndLine: 1, Text: "needle haystack", Embedding: []float32{1, 0, 0}, Folder: "src", Language: "go", Kind: "function_declaration", Symbol: "needle"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate a DB written by a build without FTS5: embeddings rows exist but
+	// the index is empty.
+	if _, err := s.DB().Exec("INSERT INTO chunks_fts(chunks_fts) VALUES('delete-all')"); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := s.DB().QueryRow("SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'needle'").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("expected empty index after delete-all, got %d matches", n)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s2 := openTestStoreAt(t, dbPath)
+	if err := s2.DB().QueryRow("SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH 'needle'").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("expected rebuild to reindex embeddings, got %d matches", n)
 	}
 }

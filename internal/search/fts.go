@@ -3,7 +3,6 @@ package search
 import (
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
 	"unicode"
 
@@ -253,7 +252,7 @@ func resultKey(r Result) string {
 }
 
 func queryFTS(s *store.Store, ftsQuery string, limit int, folders []string) ([]Result, error) {
-	query := `SELECT file_path, line_num, end_line, chunk_text, bm25(chunks_fts) AS rank, folder, language, chunk_kind, symbol
+	query := `SELECT file_path, line_num, end_line, chunk_text, bm25(chunks_fts) AS rank, COALESCE(folder, ''), language, chunk_kind, symbol
 		FROM chunks_fts
 		WHERE chunks_fts MATCH ?`
 	args := make([]any, 0, 2)
@@ -273,12 +272,9 @@ func queryFTS(s *store.Store, ftsQuery string, limit int, folders []string) ([]R
 	for rows.Next() {
 		var r Result
 		var rank float64
-		var lineStr, endLineStr string
-		if err := rows.Scan(&r.FilePath, &lineStr, &endLineStr, &r.Text, &rank, &r.Folder, &r.Language, &r.Kind, &r.Symbol); err != nil {
+		if err := rows.Scan(&r.FilePath, &r.LineNum, &r.EndLine, &r.Text, &rank, &r.Folder, &r.Language, &r.Kind, &r.Symbol); err != nil {
 			return nil, err
 		}
-		r.LineNum, _ = strconv.Atoi(lineStr)
-		r.EndLine, _ = strconv.Atoi(endLineStr)
 		ar := math.Abs(rank)
 		r.Score = ar / (1.0 + ar)
 		results = append(results, r)

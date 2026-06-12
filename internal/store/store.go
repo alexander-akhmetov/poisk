@@ -52,13 +52,21 @@ func (s *Store) initSchema() error {
 
 	// Check current schema version to decide whether migration is needed.
 	migrated := false
+	ftsOnlyMigration := false
 	var storedVersion int
 	err := s.db.QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&storedVersion)
-	if err != nil {
+	switch {
+	case err != nil:
 		slog.Info("schema version not found, initializing with full index",
 			"want", schemaVersion)
 		migrated = true
-	} else if storedVersion != schemaVersion {
+	case storedVersion == 5 && schemaVersion == 6:
+		// v6 only changed the chunks_fts layout (external content); embeddings
+		// and vectors are unaffected, so rebuild the FTS table instead of
+		// dropping everything and re-embedding.
+		slog.Info("schema version 5 -> 6, rebuilding FTS index only")
+		ftsOnlyMigration = true
+	case storedVersion != schemaVersion:
 		slog.Info(fmt.Sprintf("schema version mismatch (stored=%d, want=%d), dropping all tables for full reindex",
 			storedVersion, schemaVersion))
 		migrated = true
@@ -71,6 +79,16 @@ func (s *Store) initSchema() error {
 			return fmt.Errorf("recreate schema_version: %w", err)
 		}
 	}
+	if ftsOnlyMigration {
+		// The new external-content table is created below by fts5DDL and
+		// repopulated by backfillFTS5. Dropping a virtual table requires its
+		// module, so a build without FTS5 cannot drop the old table; defer the
+		// migration (version stays 5) so an FTS5-enabled build retries it.
+		if _, err := s.db.Exec("DROP TABLE IF EXISTS chunks_fts"); err != nil {
+			slog.Warn("cannot drop chunks_fts, deferring FTS migration", "error", err)
+			ftsOnlyMigration = false
+		}
+	}
 
 	for _, stmt := range splitStatements(schemaSQL) {
 		if _, err := s.db.Exec(stmt); err != nil {
@@ -81,11 +99,8 @@ func (s *Store) initSchema() error {
 	// Only write version after a migration to avoid a DELETE+INSERT window
 	// where concurrent readers see an empty table and falsely trigger migration.
 	if migrated {
-		if _, err := s.db.Exec("DELETE FROM schema_version"); err != nil {
-			return fmt.Errorf("delete schema_version: %w", err)
-		}
-		if _, err := s.db.Exec("INSERT INTO schema_version (version) VALUES (?)", schemaVersion); err != nil {
-			return fmt.Errorf("insert schema_version: %w", err)
+		if err := s.writeSchemaVersion(); err != nil {
+			return err
 		}
 	}
 
@@ -101,13 +116,34 @@ func (s *Store) initSchema() error {
 	s.initVec0()
 
 	// FTS5
+	ftsReady := false
 	if _, err := s.db.Exec(fts5DDL); err != nil {
 		slog.Warn("FTS5 not available", "error", err)
 	} else {
 		s.ftsAvailable = true
-		s.backfillFTS5()
+		ftsReady = s.backfillFTS5()
 	}
 
+	// The FTS-only migration writes the version only after the index is
+	// rebuilt; if the rebuild failed the version stays 5 and the next start
+	// retries the migration instead of leaving an empty index behind a
+	// healthy-looking v6 database.
+	if ftsOnlyMigration && ftsReady {
+		if err := s.writeSchemaVersion(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *Store) writeSchemaVersion() error {
+	if _, err := s.db.Exec("DELETE FROM schema_version"); err != nil {
+		return fmt.Errorf("delete schema_version: %w", err)
+	}
+	if _, err := s.db.Exec("INSERT INTO schema_version (version) VALUES (?)", schemaVersion); err != nil {
+		return fmt.Errorf("insert schema_version: %w", err)
+	}
 	return nil
 }
 
@@ -159,24 +195,26 @@ func (s *Store) initVec0() {
 	s.vecAvailable = true
 }
 
-func (s *Store) backfillFTS5() {
-	// Only backfill if FTS5 table is empty but embeddings exist
+// backfillFTS5 rebuilds the FTS index from embeddings if it is empty and
+// reports whether the index is populated afterwards.
+func (s *Store) backfillFTS5() bool {
+	// Only rebuild if the FTS index is empty. A plain COUNT(*) on an
+	// external-content table reads rows from embeddings, so probe the docsize
+	// shadow table, which tracks the index itself.
 	var ftsCount int
-	if err := s.db.QueryRow("SELECT COUNT(*) FROM chunks_fts").Scan(&ftsCount); err != nil {
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM chunks_fts_docsize").Scan(&ftsCount); err != nil {
 		slog.Warn("FTS5 count check failed", "error", err)
-		return
+		return false
 	}
 	if ftsCount > 0 {
-		return
+		return true
 	}
 
-	_, err := s.db.Exec(`INSERT INTO chunks_fts(chunk_text, id, source, file_path, line_num, folder, end_line, language, chunk_kind, symbol)
-		SELECT chunk_text, CAST(id AS TEXT), source, file_path, CAST(line_num AS TEXT), COALESCE(folder, ''),
-		       CAST(end_line AS TEXT), language, chunk_kind, symbol
-		FROM embeddings`)
-	if err != nil {
-		slog.Warn("FTS5 backfill failed", "error", err)
+	if _, err := s.db.Exec("INSERT INTO chunks_fts(chunks_fts) VALUES('rebuild')"); err != nil {
+		slog.Warn("FTS5 rebuild failed", "error", err)
+		return false
 	}
+	return true
 }
 
 func (s *Store) dropEmbeddingColumn() {

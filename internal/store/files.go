@@ -46,10 +46,7 @@ func (s *Store) DeleteFile(source, filePath string) error {
 		}
 	}
 	if s.ftsAvailable {
-		if _, err := tx.Exec(
-			"DELETE FROM chunks_fts WHERE source = ? AND file_path = ?",
-			source, filePath,
-		); err != nil {
+		if err := deleteFTSRows(tx, "source = ? AND file_path = ?", source, filePath); err != nil {
 			return fmt.Errorf("delete chunks_fts: %w", err)
 		}
 	}
