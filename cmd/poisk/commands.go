@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -136,6 +137,20 @@ func indexOnce(ctx context.Context, d *deps) error {
 	return nil
 }
 
+// parseTopK parses a --top-k argument. It rejects anything that is not a whole
+// non-negative number rather than falling back to a default, so a malformed
+// value never runs a search the user did not ask for.
+func parseTopK(raw string) (int, error) {
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid --top-k value: %s", raw)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("invalid --top-k value: %s (must not be negative)", raw)
+	}
+	return n, nil
+}
+
 func cmdRun() error {
 	topK := 0
 	var folders []string
@@ -148,10 +163,11 @@ func cmdRun() error {
 				return fmt.Errorf("--top-k requires a value")
 			}
 			i++
-			n, err := fmt.Sscanf(os.Args[i], "%d", &topK)
-			if n != 1 || err != nil {
-				return fmt.Errorf("invalid --top-k value: %s", os.Args[i])
+			n, err := parseTopK(os.Args[i])
+			if err != nil {
+				return err
 			}
+			topK = n
 		case "--folders":
 			if i+1 >= len(os.Args) {
 				return fmt.Errorf("--folders requires a value")

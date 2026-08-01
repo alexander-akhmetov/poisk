@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/alexander-akhmetov/poisk/internal/config"
@@ -204,6 +205,76 @@ func TestGetMultipleDocuments(t *testing.T) {
 			t.Fatalf("got %d results, want 1", len(results))
 		}
 	})
+}
+
+func TestEffectiveMaxBytes(t *testing.T) {
+	tests := []struct {
+		name     string
+		maxBytes int
+		want     int
+	}{
+		{name: "unset takes the default", maxBytes: 0, want: defaultMaxBytes},
+		{name: "negative takes the default", maxBytes: -1, want: defaultMaxBytes},
+		{name: "ordinary value passes through", maxBytes: 50_000, want: 50_000},
+		{name: "exactly at the ceiling", maxBytes: maxMaxBytes, want: maxMaxBytes},
+		{name: "one above the ceiling", maxBytes: maxMaxBytes + 1, want: maxMaxBytes},
+		{name: "far above the ceiling", maxBytes: 50_000_000, want: maxMaxBytes},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := EffectiveMaxBytes(tt.maxBytes)
+			if got != tt.want {
+				t.Fatalf("EffectiveMaxBytes(%d) = %d, want %d", tt.maxBytes, got, tt.want)
+			}
+			if got > maxMaxBytes {
+				t.Fatalf("effective budget %d exceeds the ceiling %d", got, maxMaxBytes)
+			}
+		})
+	}
+
+	if maxMaxBytes != 1_000_000 {
+		t.Fatalf("maxMaxBytes = %d, want 1000000", maxMaxBytes)
+	}
+}
+
+func TestGetMultipleDocumentsCapsOversizedMaxBytes(t *testing.T) {
+	store := newMockStore()
+	cfg := &config.Config{Folders: []config.FolderConfig{{Path: "/repo"}}}
+	svc := NewDocumentService(store, cfg)
+
+	// Roughly 1.5 MB of chunk text across 30 files, more than the ceiling.
+	body := strings.Repeat("x", 50_000)
+	for i := range 30 {
+		fp := fmt.Sprintf("/repo/file-%02d.go", i)
+		store.addChunks("/repo", fp, []domain.Chunk{{FilePath: fp, LineNum: 1, EndLine: 1, Text: body}})
+	}
+
+	paths := make([]string, 30)
+	for i := range paths {
+		paths[i] = fmt.Sprintf("/repo/file-%02d.go", i)
+	}
+
+	results, truncated, err := svc.GetMultipleDocuments(strings.Join(paths, ","), 50_000_000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !truncated {
+		t.Fatal("expected truncation at the 1000000-byte ceiling, not the requested 50000000")
+	}
+
+	total := 0
+	for _, r := range results {
+		for _, c := range r.Chunks {
+			total += len(c.Text)
+		}
+	}
+	if total > maxMaxBytes {
+		t.Fatalf("returned %d bytes of chunk text, above the %d ceiling", total, maxMaxBytes)
+	}
+	if total == 0 {
+		t.Fatal("expected some content within the ceiling")
+	}
 }
 
 func TestResolveSource(t *testing.T) {

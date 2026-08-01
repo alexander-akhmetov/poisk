@@ -183,6 +183,18 @@ func combineFTSQuery(textClause, metadataClause string) string {
 	return textClause + " AND " + metadataClause
 }
 
+// maxFTSFetchLimit bounds how many candidate rows one FTS stage pulls back. It
+// is the largest limit the application ceiling on top_k can produce.
+const maxFTSFetchLimit = maxTopK * 5
+
+// ftsFetchLimit returns the candidate fetch limit shared by every FTS stage.
+// Each stage over-fetches so that dedup across stages still fills topK. Search
+// clamps topK before it gets here, so the cap only matters for callers that
+// reach searchFTS directly.
+func ftsFetchLimit(topK int) int {
+	return min(topK*5, maxFTSFetchLimit)
+}
+
 // searchFTS performs staged FTS retrieval: strict AND → relaxed OR → prefix OR.
 // Each stage only runs if prior stages returned fewer results than topK.
 // Results are deduplicated across stages by filepath:line.
@@ -199,6 +211,7 @@ func searchFTS(s *store.Store, queryText string, topK int, folders []string, fil
 	seen := make(map[string]bool)
 	var results []Result
 	metadataClause := buildMetadataClause(filters)
+	fetchLimit := ftsFetchLimit(topK)
 
 	addResults := func(staged []Result) {
 		for _, r := range staged {
@@ -212,7 +225,7 @@ func searchFTS(s *store.Store, queryText string, topK int, folders []string, fil
 
 	// Stage A: strict AND
 	if q := combineFTSQuery(buildStrictAND(tokens), metadataClause); q != "" {
-		rows, err := queryFTS(s, q, topK*5, folders)
+		rows, err := queryFTS(s, q, fetchLimit, folders)
 		if err != nil {
 			return nil, err
 		}
@@ -222,7 +235,7 @@ func searchFTS(s *store.Store, queryText string, topK int, folders []string, fil
 	// Stage B: relaxed OR (only if A returned < topK)
 	if len(results) < topK && len(tokens) > 0 {
 		if q := combineFTSQuery(buildRelaxedOR(tokens), metadataClause); q != "" {
-			rows, err := queryFTS(s, q, topK*5, folders)
+			rows, err := queryFTS(s, q, fetchLimit, folders)
 			if err != nil {
 				return nil, err
 			}
@@ -233,7 +246,7 @@ func searchFTS(s *store.Store, queryText string, topK int, folders []string, fil
 	// Stage C: prefix OR (only if A+B returned < topK)
 	if len(results) < topK && len(tokens) > 0 {
 		if q := combineFTSQuery(buildPrefixOR(tokens), metadataClause); q != "" {
-			rows, err := queryFTS(s, q, topK*5, folders)
+			rows, err := queryFTS(s, q, fetchLimit, folders)
 			if err != nil {
 				return nil, err
 			}

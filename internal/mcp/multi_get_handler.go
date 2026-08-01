@@ -12,7 +12,7 @@ import (
 // MultiGetInput is the schema for the multi_get tool.
 type MultiGetInput struct {
 	Paths    string `json:"paths" jsonschema:"Comma-separated file paths or glob patterns"`
-	MaxBytes int    `json:"max_bytes,omitempty" jsonschema:"Max total bytes to return (default 100000)"`
+	MaxBytes int    `json:"max_bytes,omitempty" jsonschema:"Max total bytes to return (default 100000, values above 1000000 are capped at 1000000)"`
 }
 
 func registerMultiGetTool(server *gomcp.Server, docSvc *app.DocumentService) {
@@ -41,11 +41,7 @@ func registerMultiGetTool(server *gomcp.Server, docSvc *app.DocumentService) {
 			}
 		}
 		if truncated {
-			maxBytes := args.MaxBytes
-			if maxBytes <= 0 {
-				maxBytes = 100_000
-			}
-			fmt.Fprintf(&sb, "\n[output truncated at %d bytes]\n", maxBytes)
+			fmt.Fprintf(&sb, "\n[output truncated at %d bytes]\n", app.EffectiveMaxBytes(args.MaxBytes))
 		}
 		return &gomcp.CallToolResult{
 			Content: []gomcp.Content{&gomcp.TextContent{Text: sb.String()}},

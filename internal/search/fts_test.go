@@ -1,7 +1,9 @@
 package search
 
 import (
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/alexander-akhmetov/poisk/internal/store"
@@ -276,5 +278,92 @@ func TestQueryFTSNullFolder(t *testing.T) {
 	}
 	if r.Text != "nullfolderprobe text" {
 		t.Errorf("text = %q, want %q", r.Text, "nullfolderprobe text")
+	}
+}
+
+// seedFTSCorpus writes a corpus large enough to exceed every candidate fetch
+// limit. Each entry matches "alpha"; the first bothCount also match "beta".
+func seedFTSCorpus(t *testing.T, s *store.Store, total, bothCount int) {
+	t.Helper()
+	entries := make([]store.Entry, total)
+	for i := range entries {
+		text := fmt.Sprintf("alpha filler line number %d", i)
+		if i < bothCount {
+			text = fmt.Sprintf("alpha beta filler line number %d", i)
+		}
+		entries[i] = store.Entry{
+			LineNum:   i + 1,
+			EndLine:   i + 1,
+			Text:      text,
+			Embedding: []float32{1, 0, 0},
+			Folder:    "src",
+			Language:  "go",
+		}
+	}
+	if err := s.InsertEntries("src", "corpus.go", entries); err != nil {
+		t.Fatalf("seed corpus: %v", err)
+	}
+}
+
+func openFTSCorpusStore(t *testing.T, total, bothCount int) *store.Store {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "fts-limits.db")
+	s, err := store.Open(dbPath, 3, store.QuantizationInt8)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if !s.FTSAvailable() {
+		t.Skip("FTS5 not available")
+	}
+	seedFTSCorpus(t, s, total, bothCount)
+	return s
+}
+
+func TestQueryFTSAppliesTheClampedFetchLimit(t *testing.T) {
+	s := openFTSCorpusStore(t, maxFTSFetchLimit+500, 0)
+
+	// The clamped limit has to reach the SQL LIMIT, not just the caller.
+	results, err := queryFTS(s, `"alpha"`, ftsFetchLimit(maxTopK), nil)
+	if err != nil {
+		t.Fatalf("queryFTS: %v", err)
+	}
+	if len(results) != maxFTSFetchLimit {
+		t.Fatalf("got %d candidate rows, want the clamped %d", len(results), maxFTSFetchLimit)
+	}
+
+	// An unclamped topK*5 would have asked for 25000 rows.
+	results, err = queryFTS(s, `"alpha"`, ftsFetchLimit(5000), nil)
+	if err != nil {
+		t.Fatalf("queryFTS at oversized topK: %v", err)
+	}
+	if len(results) != maxFTSFetchLimit {
+		t.Fatalf("got %d candidate rows at topK=5000, want the clamped %d", len(results), maxFTSFetchLimit)
+	}
+}
+
+func TestSearchFTSAtMaxTopKRunsEveryStageWithinTheLimit(t *testing.T) {
+	// Strict AND matches only 400 rows, below topK, so the relaxed OR and
+	// prefix OR stages both run.
+	s := openFTSCorpusStore(t, maxFTSFetchLimit+500, 400)
+
+	results, err := searchFTS(s, "alpha beta", maxTopK, nil, MetadataFilters{})
+	if err != nil {
+		t.Fatalf("searchFTS: %v", err)
+	}
+	if len(results) != maxTopK {
+		t.Fatalf("got %d results, want the requested %d", len(results), maxTopK)
+	}
+
+	// The first 400 rows carry both terms, so the strict AND stage must have
+	// contributed them before the broader stages filled the rest.
+	both := 0
+	for _, r := range results {
+		if strings.Contains(r.Text, "beta") {
+			both++
+		}
+	}
+	if both != 400 {
+		t.Fatalf("%d results carry both terms, want all 400 from the strict AND stage", both)
 	}
 }

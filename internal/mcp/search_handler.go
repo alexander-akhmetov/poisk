@@ -12,7 +12,7 @@ import (
 // SearchInput is the schema for the search tool.
 type SearchInput struct {
 	Query   string   `json:"query" jsonschema:"Search query text"`
-	TopK    int      `json:"top_k,omitempty" jsonschema:"Max results (default 20)"`
+	TopK    int      `json:"top_k,omitempty" jsonschema:"Max results (default 20, values above 1000 are capped at 1000)"`
 	Folders []string `json:"folders,omitempty" jsonschema:"Filter to folder paths"`
 }
 

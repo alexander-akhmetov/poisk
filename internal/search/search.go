@@ -26,6 +26,20 @@ type Result struct {
 	Context  []string
 }
 
+// maxTopK bounds how many results a caller can ask for. top_k arrives
+// unvalidated over MCP and scales the work of every retrieval stage, so it is
+// clamped once, before it fans out.
+const maxTopK = 1000
+
+// effectiveTopK applies the configured default to an unset top_k, then clamps
+// it to maxTopK.
+func effectiveTopK(topK, defaultTopK int) int {
+	if topK <= 0 {
+		topK = defaultTopK
+	}
+	return min(topK, maxTopK)
+}
+
 type Searcher struct {
 	store     *store.Store
 	client    *embed.Client
@@ -39,9 +53,7 @@ func NewSearcher(s *store.Store, c *embed.Client, cfg *config.Config, llmClient 
 
 //nolint:gocyclo
 func (s *Searcher) Search(ctx context.Context, query string, topK int, folders []string) ([]Result, error) {
-	if topK <= 0 {
-		topK = s.cfg.Search.DefaultTopK
-	}
+	topK = effectiveTopK(topK, s.cfg.Search.DefaultTopK)
 
 	subQueries := parseTypedQuery(query)
 	if len(subQueries) == 0 {

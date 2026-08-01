@@ -551,6 +551,61 @@ func TestListTools(t *testing.T) {
 	}
 }
 
+// TestToolSchemasStateTheirCeilings pins the ceilings into the tool schemas.
+// A model that cannot see them requests values that are silently clamped.
+func TestToolSchemasStateTheirCeilings(t *testing.T) {
+	env := newMCPTestEnv(t)
+	defer env.cleanup()
+
+	res, err := env.client.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+
+	schemas := make(map[string]any, len(res.Tools))
+	for _, tool := range res.Tools {
+		schemas[tool.Name] = tool.InputSchema
+	}
+
+	tests := []struct {
+		tool     string
+		property string
+		want     string
+	}{
+		{tool: "search", property: "top_k", want: "1000"},
+		{tool: "multi_get", property: "max_bytes", want: "1000000"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.tool+"."+tt.property, func(t *testing.T) {
+			raw, ok := schemas[tt.tool]
+			if !ok {
+				t.Fatalf("no input schema for tool %q", tt.tool)
+			}
+			encoded, err := json.Marshal(raw)
+			if err != nil {
+				t.Fatalf("marshal %s schema: %v", tt.tool, err)
+			}
+			var schema struct {
+				Properties map[string]struct {
+					Description string `json:"description"`
+				} `json:"properties"`
+			}
+			if err := json.Unmarshal(encoded, &schema); err != nil {
+				t.Fatalf("decode %s schema: %v", tt.tool, err)
+			}
+			prop, ok := schema.Properties[tt.property]
+			if !ok {
+				t.Fatalf("tool %q has no %q property in %s", tt.tool, tt.property, encoded)
+			}
+			if !strings.Contains(prop.Description, tt.want) {
+				t.Fatalf("%s.%s description %q does not state the ceiling %s",
+					tt.tool, tt.property, prop.Description, tt.want)
+			}
+		})
+	}
+}
+
 type bearerRoundTripper struct {
 	token string
 	base  http.RoundTripper

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -315,5 +316,64 @@ func TestIndexDeletedFileRemoved(t *testing.T) {
 	count, _ = ts.DB.Count(ts.Corpus)
 	if count != 0 {
 		t.Fatalf("expected 0 chunks after file deletion, got %d", count)
+	}
+}
+
+func TestParseTopK(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		want    int
+		wantErr bool
+	}{
+		{name: "plain number", raw: "50", want: 50},
+		{name: "zero means default", raw: "0", want: 0},
+		{name: "trailing garbage is rejected", raw: "5abc", wantErr: true},
+		{name: "leading garbage is rejected", raw: "abc5", wantErr: true},
+		{name: "empty is rejected", raw: "", wantErr: true},
+		{name: "float is rejected", raw: "5.5", wantErr: true},
+		{name: "negative is rejected", raw: "-1", wantErr: true},
+		{name: "whitespace is rejected", raw: " 5", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseTopK(tt.raw)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("parseTopK(%q) = %d, want an error", tt.raw, got)
+				}
+				if !strings.Contains(err.Error(), tt.raw) {
+					t.Fatalf("error %q does not name the invalid value %q", err, tt.raw)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseTopK(%q): %v", tt.raw, err)
+			}
+			if got != tt.want {
+				t.Fatalf("parseTopK(%q) = %d, want %d", tt.raw, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCmdRunRejectsMalformedTopK(t *testing.T) {
+	for _, raw := range []string{"5abc", "-3"} {
+		t.Run(raw, func(t *testing.T) {
+			old := os.Args
+			t.Cleanup(func() { os.Args = old })
+			// A bad value must fail before bootstrap opens the index, so the
+			// command never runs a search with a partially parsed number.
+			os.Args = []string{"poisk", "run", "some query", "--top-k", raw}
+
+			err := cmdRun()
+			if err == nil {
+				t.Fatalf("cmdRun with --top-k %q returned no error", raw)
+			}
+			if !strings.Contains(err.Error(), raw) {
+				t.Fatalf("error %q does not name the invalid value %q", err, raw)
+			}
+		})
 	}
 }

@@ -58,10 +58,27 @@ func (d *DocumentService) GetDocument(filePath string, startLine, endLine int) (
 	return chunks, context, nil
 }
 
-func (d *DocumentService) GetMultipleDocuments(pathsCSV string, maxBytes int) ([]DocumentResult, bool, error) {
+const (
+	// defaultMaxBytes is what multi_get returns when the caller asks for no
+	// specific budget.
+	defaultMaxBytes = 100_000
+	// maxMaxBytes bounds a caller-supplied budget. max_bytes arrives
+	// unvalidated over MCP and decides how much file content one call reads
+	// into memory.
+	maxMaxBytes = 1_000_000
+)
+
+// EffectiveMaxBytes reports the byte budget multi_get applies for a requested
+// max_bytes, after the default and the ceiling.
+func EffectiveMaxBytes(maxBytes int) int {
 	if maxBytes <= 0 {
-		maxBytes = 100_000
+		maxBytes = defaultMaxBytes
 	}
+	return min(maxBytes, maxMaxBytes)
+}
+
+func (d *DocumentService) GetMultipleDocuments(pathsCSV string, maxBytes int) ([]DocumentResult, bool, error) {
+	maxBytes = EffectiveMaxBytes(maxBytes)
 
 	patterns := strings.Split(pathsCSV, ",")
 	for i := range patterns {
