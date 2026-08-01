@@ -44,6 +44,40 @@ func Open(dbPath string, dimensions int, quantization string) (*Store, error) {
 	return s, nil
 }
 
+// migrationPlan says which upgrade steps a stored schema version needs.
+// A targeted step preserves the indexed data; rebuild drops everything and
+// forces a full reindex.
+type migrationPlan struct {
+	rebuild bool // no targeted path exists: drop all tables
+	fts     bool // v5 -> v6: rebuild chunks_fts in the external-content layout
+	vecPart bool // v6 -> v7: re-partition vec_embeddings by source
+}
+
+func (p migrationPlan) any() bool { return p.rebuild || p.fts || p.vecPart }
+
+// planMigration walks every version between the stored one and the current one
+// and collects the step for each. A version with no targeted step forces a full
+// rebuild, which supersedes the targeted steps. Walking the range keeps every
+// step live across future version bumps; a literal version pair would go dead
+// on the next one.
+func planMigration(storedVersion int) migrationPlan {
+	var plan migrationPlan
+	if storedVersion > schemaVersion {
+		return migrationPlan{rebuild: true}
+	}
+	for v := storedVersion; v < schemaVersion; v++ {
+		switch v {
+		case 5:
+			plan.fts = true
+		case 6:
+			plan.vecPart = true
+		default:
+			return migrationPlan{rebuild: true}
+		}
+	}
+	return plan
+}
+
 func (s *Store) initSchema() error {
 	// Schema version table always exists
 	if _, err := s.db.Exec(schemaVersionDDL); err != nil {
@@ -51,42 +85,37 @@ func (s *Store) initSchema() error {
 	}
 
 	// Check current schema version to decide whether migration is needed.
-	migrated := false
-	ftsOnlyMigration := false
 	var storedVersion int
-	err := s.db.QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&storedVersion)
-	switch {
-	case err != nil:
-		slog.Info("schema version not found, initializing with full index",
-			"want", schemaVersion)
-		migrated = true
-	case storedVersion == 5 && schemaVersion == 6:
-		// v6 only changed the chunks_fts layout (external content); embeddings
-		// and vectors are unaffected, so rebuild the FTS table instead of
-		// dropping everything and re-embedding.
-		slog.Info("schema version 5 -> 6, rebuilding FTS index only")
-		ftsOnlyMigration = true
-	case storedVersion != schemaVersion:
-		slog.Info(fmt.Sprintf("schema version mismatch (stored=%d, want=%d), dropping all tables for full reindex",
-			storedVersion, schemaVersion))
-		migrated = true
+	var plan migrationPlan
+	if err := s.db.QueryRow("SELECT version FROM schema_version LIMIT 1").Scan(&storedVersion); err != nil {
+		slog.Info("schema version not found, initializing with full index", "want", schemaVersion)
+		plan = migrationPlan{rebuild: true}
+	} else {
+		plan = planMigration(storedVersion)
+		if plan.rebuild {
+			slog.Info(fmt.Sprintf("schema version mismatch (stored=%d, want=%d), dropping all tables for full reindex",
+				storedVersion, schemaVersion))
+		} else if plan.any() {
+			slog.Info("migrating schema", "stored", storedVersion, "want", schemaVersion,
+				"rebuild_fts", plan.fts, "repartition_vectors", plan.vecPart)
+		}
 	}
 
-	if migrated {
+	if plan.rebuild {
 		s.dropAllTables()
 		// Recreate schema version table after drop
 		if _, err := s.db.Exec(schemaVersionDDL); err != nil {
 			return fmt.Errorf("recreate schema_version: %w", err)
 		}
 	}
-	if ftsOnlyMigration {
+	if plan.fts {
 		// The new external-content table is created below by fts5DDL and
 		// repopulated by backfillFTS5. Dropping a virtual table requires its
 		// module, so a build without FTS5 cannot drop the old table; defer the
 		// migration (version stays 5) so an FTS5-enabled build retries it.
 		if _, err := s.db.Exec("DROP TABLE IF EXISTS chunks_fts"); err != nil {
 			slog.Warn("cannot drop chunks_fts, deferring FTS migration", "error", err)
-			ftsOnlyMigration = false
+			plan.fts = false
 		}
 	}
 
@@ -98,8 +127,8 @@ func (s *Store) initSchema() error {
 
 	// Only write version after a migration to avoid a DELETE+INSERT window
 	// where concurrent readers see an empty table and falsely trigger migration.
-	if migrated {
-		if err := s.writeSchemaVersion(); err != nil {
+	if plan.rebuild {
+		if err := s.writeSchemaVersion(schemaVersion); err != nil {
 			return err
 		}
 	}
@@ -115,6 +144,21 @@ func (s *Store) initSchema() error {
 	// vec0 — drop and recreate if dimensions changed
 	s.initVec0()
 
+	// vec0 re-partition, on the table initVec0 just confirmed
+	vecReady := false
+	if plan.vecPart {
+		vecReady = s.migrateVecPartition()
+		if !vecReady {
+			// vec_embeddings still has the v6 layout, with no source column,
+			// so every insert into it would fail. Turn vector support off for
+			// this process rather than report a healthy store that cannot
+			// write vectors; the next start retries the migration.
+			slog.Warn("vector search off until the vec partition migration completes; " +
+				"anything indexed meanwhile gets no vectors and needs a reindex afterwards")
+			s.vecAvailable = false
+		}
+	}
+
 	// FTS5
 	ftsReady := false
 	if _, err := s.db.Exec(fts5DDL); err != nil {
@@ -124,24 +168,52 @@ func (s *Store) initSchema() error {
 		ftsReady = s.backfillFTS5()
 	}
 
-	// The FTS-only migration writes the version only after the index is
-	// rebuilt; if the rebuild failed the version stays 5 and the next start
-	// retries the migration instead of leaving an empty index behind a
-	// healthy-looking v6 database.
-	if ftsOnlyMigration && ftsReady {
-		if err := s.writeSchemaVersion(); err != nil {
-			return err
-		}
+	if plan.rebuild {
+		return nil
 	}
-
-	return nil
+	reached := plan.reachedVersion(storedVersion, ftsReady, vecReady)
+	if reached == storedVersion {
+		return nil
+	}
+	return s.writeSchemaVersion(reached)
 }
 
-func (s *Store) writeSchemaVersion() error {
+// reachedVersion reports the version the database actually reached. A targeted
+// migration counts only once its data is in place, so a failed step leaves the
+// stored version behind and the next start retries it instead of leaving an
+// empty index behind a healthy-looking database. The version advances along the
+// contiguous run of successful steps only: a v5 database whose FTS rebuild
+// failed stays at 5 even if the later vec step succeeded.
+func (p migrationPlan) reachedVersion(storedVersion int, ftsReady, vecReady bool) int {
+	// One entry per targeted step, in version order. Each advances a database
+	// at from to from+1.
+	steps := []struct {
+		from      int
+		planned   bool
+		succeeded bool
+	}{
+		{from: 5, planned: p.fts, succeeded: ftsReady},
+		{from: 6, planned: p.vecPart, succeeded: vecReady},
+	}
+
+	reached := storedVersion
+	for _, step := range steps {
+		if step.from < reached {
+			continue // already past this step
+		}
+		if step.from != reached || !step.planned || !step.succeeded {
+			break
+		}
+		reached = step.from + 1
+	}
+	return reached
+}
+
+func (s *Store) writeSchemaVersion(version int) error {
 	if _, err := s.db.Exec("DELETE FROM schema_version"); err != nil {
 		return fmt.Errorf("delete schema_version: %w", err)
 	}
-	if _, err := s.db.Exec("INSERT INTO schema_version (version) VALUES (?)", schemaVersion); err != nil {
+	if _, err := s.db.Exec("INSERT INTO schema_version (version) VALUES (?)", version); err != nil {
 		return fmt.Errorf("insert schema_version: %w", err)
 	}
 	return nil

@@ -2,7 +2,11 @@ package store
 
 import "strconv"
 
-const schemaVersion = 6
+const schemaVersion = 7
+
+// MaxVecK is the largest k sqlite-vec accepts in a KNN query. A larger k fails
+// the query outright instead of returning fewer rows.
+const MaxVecK = 4096
 
 // Quantization modes for vec0 vector storage.
 const (
@@ -55,12 +59,29 @@ const indexingProgressDDL = `CREATE TABLE IF NOT EXISTS indexing_progress (
     started_at INTEGER NOT NULL
 )`
 
+// vec0DDL builds the vector table. source is a vec0 partition key, so a KNN
+// query that constrains v.source scans only the matching partitions and applies
+// k inside each one. Without it, sqlite-vec picks the global top k and a folder
+// filter can drop every row.
 func vec0DDL(dims int, quantization string) string {
 	elem := "float"
 	if quantization == QuantizationInt8 {
 		elem = "int8"
 	}
-	return `CREATE VIRTUAL TABLE IF NOT EXISTS vec_embeddings USING vec0(embedding ` + elem + `[` + strconv.Itoa(dims) + `] distance_metric=cosine)`
+	return `CREATE VIRTUAL TABLE IF NOT EXISTS vec_embeddings USING vec0(` +
+		`source TEXT partition key, ` +
+		`embedding ` + elem + `[` + strconv.Itoa(dims) + `] distance_metric=cosine)`
+}
+
+// vecValueCtor wraps operand in the SQL constructor that re-tags a raw vec0
+// blob with its element subtype, for copying vectors between vec0 tables.
+// Unlike VecValueExpr, which quantizes an incoming float32 blob, this takes
+// bytes that are already in the column's element type.
+func vecValueCtor(quantization, operand string) string {
+	if quantization == QuantizationInt8 {
+		return "vec_int8(" + operand + ")"
+	}
+	return "vec_f32(" + operand + ")"
 }
 
 // chunks_fts is an external-content table: chunk text lives only in

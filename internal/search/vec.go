@@ -24,19 +24,20 @@ func searchVec(s *store.Store, queryBlob []byte, topK int, folders []string, fil
 		return nil, nil
 	}
 
-	filtered := !filters.Empty()
-	fetchLimit := topK * 5
-	if filtered {
-		fetchLimit = topK * 10
-	}
+	// Metadata filters are applied after KNN, so a filtered query can lose most
+	// of its neighbours and needs a wider fetch plus one widening retry.
+	// Folders are scoped inside vec0 by the source partition key, which applies
+	// k within each requested partition, so a wider k cannot return a row the
+	// first attempt missed.
+	scoped := !filters.Empty()
+	fetchLimit, retryLimit := vecFetchLimits(topK, scoped)
 
 	results, err := execVecQuery(s, queryBlob, topK, fetchLimit, folders, filters, threshold)
 	if err != nil {
 		return nil, err
 	}
 
-	if filtered && len(results) < topK {
-		retryLimit := min(topK*50, 1000)
+	if scoped && len(results) < topK && retryLimit > fetchLimit {
 		results, err = execVecQuery(s, queryBlob, topK, retryLimit, folders, filters, threshold)
 		if err != nil {
 			return nil, err
@@ -46,6 +47,18 @@ func searchVec(s *store.Store, queryBlob []byte, topK int, folders []string, fil
 	return results, nil
 }
 
+// vecFetchLimits returns the k for the first vec0 attempt and for the widening
+// retry. Both are capped at store.MaxVecK because sqlite-vec fails a KNN query
+// outright above it, which would silently disable vector search. The retry is
+// never narrower than the first attempt.
+func vecFetchLimits(topK int, scoped bool) (fetchLimit, retryLimit int) {
+	overFetch := 5
+	if scoped {
+		overFetch = 10
+	}
+	return min(topK*overFetch, store.MaxVecK), min(topK*50, store.MaxVecK)
+}
+
 func execVecQuery(s *store.Store, queryBlob []byte, topK, fetchLimit int, folders []string, filters MetadataFilters, threshold float64) ([]Result, error) {
 	query := `SELECT e.file_path, e.line_num, e.end_line, e.chunk_text, v.distance, e.folder, e.language, e.chunk_kind, e.symbol
 		FROM vec_embeddings v
@@ -53,7 +66,9 @@ func execVecQuery(s *store.Store, queryBlob []byte, topK, fetchLimit int, folder
 		WHERE v.embedding MATCH ` + s.VecValueExpr() + ` AND k = ?`
 	args := []any{queryBlob, fetchLimit}
 
-	query, args = appendInClause(query, args, "e.source", folders)
+	// v.source, not e.source: the constraint has to sit on the vec0 table for
+	// the source partition key to restrict the KNN scan.
+	query, args = appendInClause(query, args, "v.source", folders)
 	query, args = appendInClause(query, args, "e.language", filters.Languages)
 	query, args = appendInClause(query, args, "e.chunk_kind", filters.Kinds)
 	query, args = appendInClause(query, args, "LOWER(e.symbol)", filters.Symbols)

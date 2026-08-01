@@ -320,12 +320,12 @@ func TestSchemaVersionMigration(t *testing.T) {
 		wantCount     int // surviving embeddings/vec/fts rows after migration
 	}{
 		{
-			name:          "older version drops all data",
-			storedVersion: schemaVersion - 2,
+			name:          "version with no migration path drops all data",
+			storedVersion: 3,
 			wantCount:     0,
 		},
 		{
-			name:          "v5 to v6 keeps data and rebuilds fts",
+			name:          "v5 chains through both targeted migrations and keeps data",
 			storedVersion: 5,
 			wantCount:     1,
 		},
@@ -337,6 +337,7 @@ func TestSchemaVersionMigration(t *testing.T) {
 
 			s := openTestStoreAt(t, dbPath)
 			ftsAvailable := s.FTSAvailable()
+			vecAvailable := s.VecAvailable()
 			if err := s.SetFileMtime("src", "main.go", 12345); err != nil {
 				t.Fatal(err)
 			}
@@ -347,6 +348,12 @@ func TestSchemaVersionMigration(t *testing.T) {
 			}
 			if err := s.Close(); err != nil {
 				t.Fatalf("close store: %v", err)
+			}
+
+			// Recreate vec_embeddings without the source partition key, so a
+			// stored version below 7 meets the real pre-v7 shape.
+			if vecAvailable {
+				unpartitionVecTable(t, dbPath, 3, tt.storedVersion)
 			}
 
 			db, err := sql.Open("sqlite3", dbPath)
@@ -395,6 +402,11 @@ func TestSchemaVersionMigration(t *testing.T) {
 				}
 				if vecCount != tt.wantCount {
 					t.Fatalf("vec_embeddings count=%d, want %d", vecCount, tt.wantCount)
+				}
+				// Every path reaches v7, so the vector table carries the
+				// partition key whether it was rebuilt or migrated in place.
+				if ddl := vecTableDDL(t, s2); !strings.Contains(ddl, "source TEXT partition key") {
+					t.Fatalf("vec_embeddings not partitioned after migration: %s", ddl)
 				}
 			}
 
@@ -925,6 +937,9 @@ func TestVec0KNNRoundtrip(t *testing.T) {
 			}
 			if !strings.Contains(ddl, tt.wantElem) || !strings.Contains(ddl, "distance_metric=cosine") {
 				t.Fatalf("expected %s cosine vec0 column, got: %s", tt.wantElem, ddl)
+			}
+			if !strings.Contains(ddl, "source TEXT partition key") {
+				t.Fatalf("expected source partition key in vec0 ddl, got: %s", ddl)
 			}
 
 			// Unit-norm vectors: exact match, nearby (cos=0.8), orthogonal
