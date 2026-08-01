@@ -43,7 +43,7 @@ At query time, both results are merged with Reciprocal Rank Fusion — so you ge
 - **Markdown chunking** — heading-aware sections with breadcrumb paths, fence-aware splitting
 - **Incremental indexing** — tracks file mtimes, only re-embeds changed files
 - **Multiple folders** — index and search across multiple configured directories
-- **Compact storage** — vectors stored as int8 by default (~4x smaller index), optional Matryoshka truncation to fewer dimensions
+- **Compact storage** — vectors stored as int8 by default (~4x smaller index), optional Matryoshka truncation to fewer dimensions, which also cuts search latency because vec0 scans every vector on every query
 
 ## Manual install
 
@@ -87,7 +87,19 @@ model = "text-embedding-3-small"
 dimensions = 1536
 ```
 
-Vectors are stored int8-quantized by default, which makes the index about 4x smaller at a small recall cost; set `quantization = "float32"` to keep full-precision vectors. With `matryoshka = true`, vectors longer than `dimensions` are truncated and renormalized — useful with Matryoshka-trained models (like qwen3-embedding) on providers that ignore the `dimensions` parameter, such as Ollama. Changing `quantization` re-embeds all indexed folders.
+Vectors are stored int8-quantized by default, which makes the index about 4x smaller at a small recall cost; set `quantization = "float32"` to keep full-precision vectors. With `matryoshka = true`, vectors longer than `dimensions` are truncated and renormalized — useful with Matryoshka-trained models (like qwen3-embedding) on providers that ignore the `dimensions` parameter, such as Ollama.
+
+`dimensions` is also a latency lever. sqlite-vec has no approximate index, so every query scans every vector and the cost is linear in dimensions. Measured on 200k vectors at k=100:
+
+| `dimensions` | vector search |
+|---|---|
+| 1024 | 219 ms |
+| 512 | 111 ms |
+| 256 | 58 ms |
+
+Halving `dimensions` roughly halves search time and index size. How much recall it costs depends on the model, so treat 512 as something to evaluate against your own corpus rather than a recommendation. The default stays 1024.
+
+Changing `model`, `dimensions`, or `quantization` re-embeds every folder. A poisk upgrade that bumps the internal schema version can also force one; targeted migrations preserve the existing vectors where a path exists.
 
 See [config.example.toml](config.example.toml) for all options, or the full [configuration reference](skills/setup/SKILL.md).
 

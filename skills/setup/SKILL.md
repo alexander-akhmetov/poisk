@@ -63,11 +63,23 @@ Any OpenAI-compatible embedding API. Defaults to local Ollama with `qwen3-embedd
 | `base_url` | `http://localhost:11434/v1` | API endpoint |
 | `api_key` | `""` | API key (empty for local Ollama) |
 | `model` | `qwen3-embedding:4b` | Embedding model name |
-| `dimensions` | `1024` | Embedding vector dimensions (qwen3-embedding supports 32–4096) |
+| `dimensions` | `1024` | Embedding vector dimensions (qwen3-embedding supports 32–4096). Also a latency lever, see below |
 | `batch_size` | `50` | Chunks per embedding request |
 | `send_dimensions` | `true` | Include dimensions parameter in API requests |
-| `quantization` | `"int8"` | Vector storage type: `"int8"` (~4x smaller index) or `"float32"`. Changing it re-embeds all folders |
+| `quantization` | `"int8"` | Vector storage type: `"int8"` (~4x smaller index) or `"float32"` |
 | `matryoshka` | `false` | Truncate longer API vectors to `dimensions` and renormalize — for providers that ignore the dimensions parameter (e.g. Ollama) |
+
+**`dimensions` and search latency.** sqlite-vec has no approximate index, so every query scans every vector and the cost is linear in dimensions. Measured on 200k vectors at k=100:
+
+| `dimensions` | vector search |
+|---|---|
+| 1024 | 219 ms |
+| 512 | 111 ms |
+| 256 | 58 ms |
+
+Halving `dimensions` roughly halves both search time and index size. How much recall that costs depends on the model, so treat 512 as a lever to evaluate against your own corpus, not a recommendation. The default stays 1024. With a Matryoshka-trained model (like qwen3-embedding) on a provider that ignores the `dimensions` parameter, set `matryoshka = true` so poisk truncates and renormalizes the longer vectors it receives.
+
+**Full reindex triggers.** Changing `model`, `dimensions`, or `quantization` re-embeds every folder. A poisk upgrade that bumps the internal schema version can also force one; targeted migrations preserve the existing vectors where a path exists.
 
 Example with OpenAI:
 
