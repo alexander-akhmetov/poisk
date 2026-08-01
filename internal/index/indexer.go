@@ -141,7 +141,25 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 		slog.Error("set indexing progress failed", "folder", folder, "error", err)
 	}
 
-	// Process changed files
+	// Process changed files. Files are chunked one at a time but embedded in
+	// groups, because the average file produces far fewer chunks than
+	// BatchSize and one HTTP request per file dominates indexing wall clock.
+	batchSize := ix.cfg.Embedding.BatchSize
+	var pending []pendingFile
+	pendingChunks := 0
+
+	flush := func(processed int) {
+		if len(pending) == 0 {
+			return
+		}
+		ix.embedGroup(ctx, folder, pending, &stats)
+		pending = nil
+		pendingChunks = 0
+		if err := ix.store.UpdateIndexingProcessed(folder, processed); err != nil {
+			slog.Error("update indexing progress failed", "folder", folder, "error", err)
+		}
+	}
+
 	for i, filePath := range files {
 		select {
 		case <-ctx.Done():
@@ -163,11 +181,34 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 		}
 
 		slog.Info("processing file", "file", filePath, "progress", fmt.Sprintf("%d/%d", i+1, len(files)))
-		ix.processFile(ctx, folder, filePath, mtime, &stats)
-
-		if err := ix.store.UpdateIndexingProcessed(folder, i+1); err != nil {
-			slog.Error("update indexing progress failed", "folder", folder, "error", err)
+		chunks, ok := ix.prepareFile(folder, filePath, mtime, &stats)
+		if !ok || len(chunks) == 0 {
+			continue
 		}
+
+		// A file with more chunks than BatchSize keeps the multi-request path
+		// and is never grouped: its chunks must still reach InsertEntries in
+		// one call.
+		if len(chunks) > batchSize {
+			flush(i)
+			ix.embedGroup(ctx, folder, []pendingFile{{path: filePath, mtime: mtime, chunks: chunks}}, &stats)
+			if err := ix.store.UpdateIndexingProcessed(folder, i+1); err != nil {
+				slog.Error("update indexing progress failed", "folder", folder, "error", err)
+			}
+			continue
+		}
+
+		if pendingChunks+len(chunks) > batchSize {
+			flush(i)
+		}
+		pending = append(pending, pendingFile{path: filePath, mtime: mtime, chunks: chunks})
+		pendingChunks += len(chunks)
+	}
+	flush(len(files))
+	// The loop's cancellation check sits ahead of the last group, so report a
+	// run cancelled during that group instead of exiting as if it finished.
+	if err := ctx.Err(); err != nil {
+		return stats, err
 	}
 
 	if err := ix.store.ClearIndexingProgress(folder); err != nil {
@@ -184,12 +225,22 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 	return stats, nil
 }
 
-func (ix *Indexer) processFile(ctx context.Context, folder, filePath string, mtime int64, stats *FolderStats) {
+// pendingFile is a chunked file waiting to be embedded with its neighbours.
+type pendingFile struct {
+	path   string
+	mtime  int64
+	chunks []chunk.Chunk
+}
+
+// prepareFile reads and chunks one file. It reports whether the file is
+// eligible for embedding; a file that produced no chunks is finished here, on
+// the path that clears its stale entries and advances its mtime.
+func (ix *Indexer) prepareFile(folder, filePath string, mtime int64, stats *FolderStats) ([]chunk.Chunk, bool) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		ix.clearStaleEntries(folder, filePath, "read_failed", err)
 		stats.Errors++
-		return
+		return nil, false
 	}
 
 	chunks, chunkErr := chunk.File(filePath, string(content))
@@ -197,13 +248,13 @@ func (ix *Indexer) processFile(ctx context.Context, folder, filePath string, mti
 		ix.clearStaleEntries(folder, filePath, "chunk_parse_failed", chunkErr)
 		slog.Warn("chunk parse error", "file", filePath, "error", chunkErr)
 		stats.FilesSkippedParseError++
-		return
+		return nil, false
 	}
 	if len(chunks) == 0 {
 		if err := ix.store.InsertEntries(folder, filePath, nil); err != nil {
 			slog.Error("clear entries failed", "file", filePath, "error", err)
 			stats.Errors++
-			return
+			return nil, false
 		}
 		if err := ix.store.SetFileMtime(folder, filePath, mtime); err != nil {
 			slog.Error("set mtime failed", "file", filePath, "error", err)
@@ -211,63 +262,101 @@ func (ix *Indexer) processFile(ctx context.Context, folder, filePath string, mti
 		} else {
 			stats.FilesSkipped++
 		}
+		return nil, false
+	}
+
+	return chunks, true
+}
+
+// embedGroup embeds every chunk in the group, then writes each file with one
+// InsertEntries call followed by one SetFileMtime. A failed embedding request
+// covers the whole group, so every file in it has its stale data cleared, keeps
+// its old mtime, and counts one error. A cancelled run leaves the group's
+// indexed data alone: the request says nothing about those files, and the
+// mtimes stay old, so the next run re-indexes them.
+func (ix *Indexer) embedGroup(ctx context.Context, folder string, group []pendingFile, stats *FolderStats) {
+	texts := make([]string, 0, len(group))
+	for _, pf := range group {
+		for _, c := range pf.chunks {
+			texts = append(texts, c.Text)
+		}
+	}
+
+	embeddings, err := ix.embedTexts(ctx, texts, group[0].path)
+	if err != nil {
+		if ctx.Err() != nil {
+			slog.Warn("embedding cancelled", "files", len(group), "error", err)
+			stats.Errors += len(group)
+			return
+		}
+		for _, pf := range group {
+			ix.clearStaleEntries(folder, pf.path, "embedding_failed", err)
+		}
+		slog.Error("embedding failed", "files", len(group), "error", err)
+		stats.Errors += len(group)
 		return
 	}
 
-	texts := make([]string, len(chunks))
-	for i, c := range chunks {
-		texts[i] = c.Text
-	}
-
-	var entries []store.Entry
-	batchSize := ix.cfg.Embedding.BatchSize
-	totalBatches := (len(texts) + batchSize - 1) / batchSize
-	for i := 0; i < len(texts); i += batchSize {
-		end := min(i+batchSize, len(texts))
-		batchNum := i/batchSize + 1
-		if totalBatches > 1 {
-			slog.Info("embedding batch", "file", filePath, "batch", fmt.Sprintf("%d/%d", batchNum, totalBatches))
-		}
-
-		embeddings, err := ix.client.EmbedBatch(ctx, texts[i:end])
-		if err != nil {
-			ix.clearStaleEntries(folder, filePath, "embedding_failed", err)
-			slog.Error("embedding failed", "file", filePath, "error", err)
-			stats.Errors++
-			return
-		}
-
-		for j, emb := range embeddings {
-			c := chunks[i+j]
-			entries = append(entries, store.Entry{
+	offset := 0
+	for _, pf := range group {
+		entries := make([]store.Entry, len(pf.chunks))
+		for i, c := range pf.chunks {
+			entries[i] = store.Entry{
 				Source:    folder,
-				FilePath:  filePath,
+				FilePath:  pf.path,
 				LineNum:   c.StartLine,
 				EndLine:   c.EndLine,
 				Text:      c.Text,
-				Embedding: emb,
+				Embedding: embeddings[offset+i],
 				Folder:    folder,
 				Language:  c.Language,
 				Kind:      c.Kind,
 				Symbol:    c.Symbol,
-			})
+			}
 		}
-	}
+		offset += len(pf.chunks)
 
-	if len(entries) > 0 {
-		if err := ix.store.InsertEntries(folder, filePath, entries); err != nil {
-			slog.Error("insert failed", "file", filePath, "error", err)
+		if err := ix.store.InsertEntries(folder, pf.path, entries); err != nil {
+			slog.Error("insert failed", "file", pf.path, "error", err)
 			stats.Errors++
-			return
+			continue
 		}
-		if err := ix.store.SetFileMtime(folder, filePath, mtime); err != nil {
-			slog.Error("set mtime failed", "file", filePath, "error", err)
+		if err := ix.store.SetFileMtime(folder, pf.path, pf.mtime); err != nil {
+			slog.Error("set mtime failed", "file", pf.path, "error", err)
 			stats.Errors++
-			return
+			continue
 		}
 		stats.FilesProcessed++
 		stats.ChunksCreated += len(entries)
 	}
+}
+
+// embedTexts sends texts to the embedding API, splitting into BatchSize
+// requests. A group only exceeds BatchSize when it holds a single oversized
+// file, so this stays a one-request call for grouped files. logPath names that
+// oversized file in the per-batch progress log.
+func (ix *Indexer) embedTexts(ctx context.Context, texts []string, logPath string) ([][]float32, error) {
+	batchSize := ix.cfg.Embedding.BatchSize
+	totalBatches := (len(texts) + batchSize - 1) / batchSize
+
+	embeddings := make([][]float32, 0, len(texts))
+	for i := 0; i < len(texts); i += batchSize {
+		end := min(i+batchSize, len(texts))
+		if totalBatches > 1 {
+			slog.Info("embedding batch", "file", logPath, "batch", fmt.Sprintf("%d/%d", i/batchSize+1, totalBatches))
+		}
+
+		batch, err := ix.client.EmbedBatch(ctx, texts[i:end])
+		if err != nil {
+			return nil, err
+		}
+		embeddings = append(embeddings, batch...)
+	}
+
+	if len(embeddings) != len(texts) {
+		return nil, fmt.Errorf("embedding count mismatch: got %d for %d chunks", len(embeddings), len(texts))
+	}
+	return embeddings, nil
 }
 
 func (ix *Indexer) clearStaleEntries(source, filePath, reason string, cause error) {

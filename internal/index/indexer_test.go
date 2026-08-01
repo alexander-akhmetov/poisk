@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -29,42 +32,107 @@ type testEmbeddingResponse struct {
 	} `json:"data"`
 }
 
+// embeddingRecorder records the size of every embedding request the indexer
+// sends, so tests can assert how chunks were grouped into requests.
+type embeddingRecorder struct {
+	mu    sync.Mutex
+	sizes []int
+}
+
+func (r *embeddingRecorder) record(n int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sizes = append(r.sizes, n)
+}
+
+func (r *embeddingRecorder) requestSizes() []int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]int(nil), r.sizes...)
+}
+
 func newTestEmbeddingServer(t *testing.T, dims int, failOnCall int32) *httptest.Server {
 	t.Helper()
+	server, _ := newRecordingEmbeddingServer(t, dims, failOnCall)
+	return server
+}
 
+func newRecordingEmbeddingServer(t *testing.T, dims int, failOnCall int32) (*httptest.Server, *embeddingRecorder) {
+	t.Helper()
+
+	rec := &embeddingRecorder{}
 	var calls atomic.Int32
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		call := calls.Add(1)
 		if failOnCall > 0 && call >= failOnCall {
 			http.Error(w, "embedding failure", http.StatusInternalServerError)
 			return
 		}
 
-		var req testEmbeddingRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			t.Fatalf("decode request: %v", err)
-		}
+		rec.record(writeEmbeddings(t, w, r, dims))
+	}))
+	return server, rec
+}
 
-		resp := testEmbeddingResponse{
-			Data: make([]struct {
-				Embedding []float32 `json:"embedding"`
-				Index     int       `json:"index"`
-			}, len(req.Input)),
+// writeEmbeddings answers an embedding request with unit vectors and returns
+// the number of inputs it was given.
+func writeEmbeddings(t *testing.T, w http.ResponseWriter, r *http.Request, dims int) int {
+	t.Helper()
+
+	var req testEmbeddingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+
+	resp := testEmbeddingResponse{
+		Data: make([]struct {
+			Embedding []float32 `json:"embedding"`
+			Index     int       `json:"index"`
+		}, len(req.Input)),
+	}
+	for i := range req.Input {
+		vec := make([]float32, dims)
+		vec[0] = 1.0
+		resp.Data[i].Embedding = vec
+		resp.Data[i].Index = i
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		t.Fatalf("encode response: %v", err)
+	}
+	return len(req.Input)
+}
+
+// newCancellingEmbeddingServer answers requests until cancelOnCall, then cancels
+// the indexing context instead of replying. That is what Ctrl-C during an
+// embedding request looks like to the indexer.
+func newCancellingEmbeddingServer(t *testing.T, dims int, cancelOnCall int32, cancel context.CancelFunc) *httptest.Server {
+	t.Helper()
+
+	var calls atomic.Int32
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) >= cancelOnCall {
+			// Draining the body lets the server see the aborting client and end
+			// this request; the deadline keeps a stuck one from hanging the test.
+			_, _ = io.Copy(io.Discard, r.Body)
+			cancel()
+			select {
+			case <-r.Context().Done():
+			case <-time.After(10 * time.Second):
+				t.Error("client did not abort the cancelled embedding request")
+			}
+			return
 		}
-		for i := range req.Input {
-			vec := make([]float32, dims)
-			vec[0] = 1.0
-			resp.Data[i].Embedding = vec
-			resp.Data[i].Index = i
-		}
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(resp); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
+		writeEmbeddings(t, w, r, dims)
 	}))
 }
 
 func newTestIndexer(t *testing.T, folder, baseURL string) (*Indexer, *store.Store) {
+	t.Helper()
+	return newTestIndexerWithConfig(t, folder, baseURL, nil)
+}
+
+func newTestIndexerWithConfig(t *testing.T, folder, baseURL string, tweak func(*config.Config)) (*Indexer, *store.Store) {
 	t.Helper()
 
 	cfg := config.DefaultConfig()
@@ -75,6 +143,9 @@ func newTestIndexer(t *testing.T, folder, baseURL string) (*Indexer, *store.Stor
 	cfg.Index.MaxFileSizeKB = 1024
 	cfg.Folders = []config.FolderConfig{
 		{Path: folder, Description: "test"},
+	}
+	if tweak != nil {
+		tweak(&cfg)
 	}
 
 	dbPath := filepath.Join(t.TempDir(), "test.db")
@@ -231,6 +302,261 @@ func TestIndexFolderRemovesOldDataWhenEmbeddingFails(t *testing.T) {
 	}
 	if tracked[filePath] != t1.UnixNano() {
 		t.Fatalf("tracked mtime=%d, want previous successful mtime %d", tracked[filePath], t1.UnixNano())
+	}
+}
+
+// sectionedMarkdown returns markdown that chunks into exactly sections chunks.
+func sectionedMarkdown(sections int) string {
+	var sb strings.Builder
+	for i := range sections {
+		fmt.Fprintf(&sb, "## Section %d\n\nThis is section %d with enough words in the body to make a real chunk that is not discarded as too short.\n\n", i, i)
+	}
+	return sb.String()
+}
+
+func TestIndexFolderGroupsSmallFilesIntoOneEmbeddingRequest(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+
+	const files, chunksPerFile = 8, 6
+	mtime := time.Unix(1_700_001_000, 100)
+	for i := range files {
+		writeFileWithMtime(t, filepath.Join(dir, fmt.Sprintf("doc-%d.md", i)), sectionedMarkdown(chunksPerFile), mtime)
+	}
+	// A file that produces no chunks must stay off the batching path entirely.
+	writeFileWithMtime(t, filepath.Join(dir, "empty.md"), "short", mtime)
+
+	server, rec := newRecordingEmbeddingServer(t, 3, 0)
+	defer server.Close()
+	indexer, db := newTestIndexerWithConfig(t, dir, server.URL, func(cfg *config.Config) {
+		cfg.Embedding.BatchSize = 50
+	})
+
+	stats, err := indexer.IndexFolder(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("index: %v", err)
+	}
+
+	sizes := rec.requestSizes()
+	if len(sizes) != 1 || sizes[0] != files*chunksPerFile {
+		t.Fatalf("embedding requests = %v, want one request of %d chunks", sizes, files*chunksPerFile)
+	}
+	if stats.FilesProcessed != files {
+		t.Fatalf("FilesProcessed=%d, want %d", stats.FilesProcessed, files)
+	}
+	if stats.ChunksCreated != files*chunksPerFile {
+		t.Fatalf("ChunksCreated=%d, want %d", stats.ChunksCreated, files*chunksPerFile)
+	}
+	if stats.Errors != 0 {
+		t.Fatalf("Errors=%d, want 0", stats.Errors)
+	}
+
+	// InsertEntries fully replaces a file's chunks, so a file split across two
+	// calls would keep only the last call's chunks.
+	tracked, err := db.TrackedFiles(dir)
+	if err != nil {
+		t.Fatalf("tracked files: %v", err)
+	}
+	for i := range files {
+		fp := filepath.Join(dir, fmt.Sprintf("doc-%d.md", i))
+		entries, err := db.GetEntriesByPath(dir, fp)
+		if err != nil {
+			t.Fatalf("get entries for %s: %v", fp, err)
+		}
+		if len(entries) != chunksPerFile {
+			t.Fatalf("%s has %d entries, want %d from a single InsertEntries call", fp, len(entries), chunksPerFile)
+		}
+		if tracked[fp] != mtime.UnixNano() {
+			t.Fatalf("%s mtime=%d, want %d", fp, tracked[fp], mtime.UnixNano())
+		}
+	}
+
+	// The zero-chunk file is tracked but contributes nothing to the batch.
+	emptyEntries, err := db.GetEntriesByPath(dir, filepath.Join(dir, "empty.md"))
+	if err != nil {
+		t.Fatalf("get entries for empty.md: %v", err)
+	}
+	if len(emptyEntries) != 0 {
+		t.Fatalf("empty.md has %d entries, want 0", len(emptyEntries))
+	}
+	if tracked[filepath.Join(dir, "empty.md")] != mtime.UnixNano() {
+		t.Fatal("empty.md mtime was not advanced")
+	}
+
+	// A second run changes nothing and sends no further requests.
+	stats, err = indexer.IndexFolder(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("second index: %v", err)
+	}
+	if stats.FilesSkipped != files+1 || stats.Errors != 0 {
+		t.Fatalf("second run: skipped=%d errors=%d, want skipped=%d errors=0", stats.FilesSkipped, stats.Errors, files+1)
+	}
+	if got := len(rec.requestSizes()); got != 1 {
+		t.Fatalf("second run sent %d total requests, want the original 1", got)
+	}
+}
+
+func TestIndexFolderFailedGroupClearsEveryFileInIt(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+
+	const files, chunksPerFile = 4, 6
+	t1 := time.Unix(1_700_002_000, 100)
+	for i := range files {
+		writeFileWithMtime(t, filepath.Join(dir, fmt.Sprintf("doc-%d.md", i)), sectionedMarkdown(chunksPerFile), t1)
+	}
+
+	// The first grouped request succeeds, the second fails.
+	server, _ := newRecordingEmbeddingServer(t, 3, 2)
+	defer server.Close()
+	indexer, db := newTestIndexerWithConfig(t, dir, server.URL, func(cfg *config.Config) {
+		cfg.Embedding.BatchSize = 50
+	})
+
+	if _, err := indexer.IndexFolder(context.Background(), dir); err != nil {
+		t.Fatalf("first index: %v", err)
+	}
+	count, err := db.Count(dir)
+	if err != nil {
+		t.Fatalf("count after first index: %v", err)
+	}
+	if count != files*chunksPerFile {
+		t.Fatalf("count after first index=%d, want %d", count, files*chunksPerFile)
+	}
+
+	t2 := time.Unix(1_700_002_000, 200)
+	for i := range files {
+		writeFileWithMtime(t, filepath.Join(dir, fmt.Sprintf("doc-%d.md", i)), sectionedMarkdown(chunksPerFile+1), t2)
+	}
+
+	stats, err := indexer.IndexFolder(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("second index: %v", err)
+	}
+	if stats.Errors != files {
+		t.Fatalf("Errors=%d after a failed group, want one per grouped file (%d)", stats.Errors, files)
+	}
+	if stats.FilesProcessed != 0 {
+		t.Fatalf("FilesProcessed=%d after a failed group, want 0", stats.FilesProcessed)
+	}
+
+	count, err = db.Count(dir)
+	if err != nil {
+		t.Fatalf("count after failed group: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("count=%d after failed group, want every grouped file cleared", count)
+	}
+
+	tracked, err := db.TrackedFiles(dir)
+	if err != nil {
+		t.Fatalf("tracked files: %v", err)
+	}
+	for i := range files {
+		fp := filepath.Join(dir, fmt.Sprintf("doc-%d.md", i))
+		if tracked[fp] != t1.UnixNano() {
+			t.Fatalf("%s mtime=%d, want the previous successful mtime %d", fp, tracked[fp], t1.UnixNano())
+		}
+	}
+}
+
+func TestIndexFolderCancelledGroupKeepsItsIndexedData(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+
+	const files, chunksPerFile = 4, 6
+	t1 := time.Unix(1_700_004_000, 100)
+	for i := range files {
+		writeFileWithMtime(t, filepath.Join(dir, fmt.Sprintf("doc-%d.md", i)), sectionedMarkdown(chunksPerFile), t1)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// The first run's request is answered; the second run's is cancelled.
+	server := newCancellingEmbeddingServer(t, 3, 2, cancel)
+	defer server.Close()
+	indexer, db := newTestIndexerWithConfig(t, dir, server.URL, func(cfg *config.Config) {
+		cfg.Embedding.BatchSize = 50
+	})
+
+	if _, err := indexer.IndexFolder(context.Background(), dir); err != nil {
+		t.Fatalf("first index: %v", err)
+	}
+
+	t2 := time.Unix(1_700_004_000, 200)
+	for i := range files {
+		writeFileWithMtime(t, filepath.Join(dir, fmt.Sprintf("doc-%d.md", i)), sectionedMarkdown(chunksPerFile+1), t2)
+	}
+
+	stats, err := indexer.IndexFolder(ctx, dir)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled run returned %v, want context.Canceled", err)
+	}
+	if stats.Errors != files {
+		t.Fatalf("Errors=%d after a cancelled group, want one per grouped file (%d)", stats.Errors, files)
+	}
+
+	// A cancellation says nothing about the files in the group, so their
+	// previously indexed chunks must survive it.
+	count, err := db.Count(dir)
+	if err != nil {
+		t.Fatalf("count after cancelled group: %v", err)
+	}
+	if count != files*chunksPerFile {
+		t.Fatalf("count=%d after a cancelled group, want the %d chunks from the last successful run", count, files*chunksPerFile)
+	}
+
+	tracked, err := db.TrackedFiles(dir)
+	if err != nil {
+		t.Fatalf("tracked files: %v", err)
+	}
+	for i := range files {
+		fp := filepath.Join(dir, fmt.Sprintf("doc-%d.md", i))
+		if tracked[fp] != t1.UnixNano() {
+			t.Fatalf("%s mtime=%d, want the previous successful mtime %d", fp, tracked[fp], t1.UnixNano())
+		}
+	}
+}
+
+func TestIndexFolderKeepsOversizedFileOnItsOwnRequests(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+
+	const batchSize, bigChunks, smallChunks = 4, 6, 2
+	mtime := time.Unix(1_700_003_000, 100)
+	bigPath := filepath.Join(dir, "a-big.md")
+	smallPath := filepath.Join(dir, "b-small.md")
+	writeFileWithMtime(t, bigPath, sectionedMarkdown(bigChunks), mtime)
+	writeFileWithMtime(t, smallPath, sectionedMarkdown(smallChunks), mtime)
+
+	server, rec := newRecordingEmbeddingServer(t, 3, 0)
+	defer server.Close()
+	indexer, db := newTestIndexerWithConfig(t, dir, server.URL, func(cfg *config.Config) {
+		cfg.Embedding.BatchSize = batchSize
+	})
+
+	if _, err := indexer.IndexFolder(context.Background(), dir); err != nil {
+		t.Fatalf("index: %v", err)
+	}
+
+	// The oversized file splits across requests of BatchSize and never shares
+	// one with the file that follows it.
+	want := []int{batchSize, bigChunks - batchSize, smallChunks}
+	sizes := rec.requestSizes()
+	if len(sizes) != len(want) {
+		t.Fatalf("embedding requests = %v, want %v", sizes, want)
+	}
+	for i := range want {
+		if sizes[i] != want[i] {
+			t.Fatalf("embedding requests = %v, want %v", sizes, want)
+		}
+	}
+
+	// All of the oversized file's chunks survive, so they arrived in one
+	// InsertEntries call.
+	entries, err := db.GetEntriesByPath(dir, bigPath)
+	if err != nil {
+		t.Fatalf("get entries: %v", err)
+	}
+	if len(entries) != bigChunks {
+		t.Fatalf("oversized file has %d entries, want %d", len(entries), bigChunks)
 	}
 }
 
