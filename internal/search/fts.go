@@ -208,6 +208,9 @@ func searchFTS(s *store.Store, queryText string, topK int, folders []string, fil
 		return nil, nil
 	}
 
+	acquireDBQuery()
+	defer releaseDBQuery()
+
 	seen := make(map[string]bool)
 	var results []Result
 	metadataClause := buildMetadataClause(filters)

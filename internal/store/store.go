@@ -9,11 +9,32 @@ import (
 	"strings"
 
 	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
-	_ "github.com/mattn/go-sqlite3" // SQLite driver
+	"github.com/mattn/go-sqlite3"
 )
+
+// driverName is a private registration of the SQLite driver, so every
+// connection can be configured on open. The stock "sqlite3" name takes its
+// settings from the DSN, and the DSN has no parameter for mmap_size.
+const driverName = "sqlite3_poisk"
+
+// mmapSize is how much of the database SQLite may map into the address space.
+// A vector search reads every stored vector, which without a mapping is one
+// pread per 4KB page: a 200k-row index at 1024 dimensions spends more time in
+// the kernel than computing distances. SQLite clamps this to its compiled-in
+// maximum, so asking for more than the build allows is safe.
+const mmapSize = 4 << 30
+
+// maxIdleConns is how many SQLite connections stay open between searches.
+const maxIdleConns = 32
 
 func init() {
 	sqlite_vec.Auto()
+	sql.Register(driverName, &sqlite3.SQLiteDriver{
+		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
+			_, err := conn.Exec(fmt.Sprintf("PRAGMA mmap_size=%d", mmapSize), nil)
+			return err
+		},
+	})
 }
 
 type Store struct {
@@ -29,10 +50,16 @@ func Open(dbPath string, dimensions int, quantization string) (*Store, error) {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
 
-	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	db, err := sql.Open(driverName, dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
+
+	// A search fans out into one query per source partition per query variant,
+	// so a dozen or more connections are live at once. The pool keeps 2 idle by
+	// default and closes the rest after each query, paying to reopen the file
+	// and re-run the schema lookups on the next search.
+	db.SetMaxIdleConns(maxIdleConns)
 
 	s := &Store{db: db, dimensions: dimensions, quantization: quantization}
 

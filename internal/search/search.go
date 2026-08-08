@@ -126,12 +126,20 @@ func (s *Searcher) embedTasks(ctx context.Context, tasks []retrievalTask) error 
 	return nil
 }
 
-// searchConcurrency bounds how many index queries run at once. Both a vec0 KNN
-// scan and an FTS5 match are CPU-bound, so more goroutines than cores only adds
+// dbQuerySem bounds how many index queries run at once. Both a vec0 KNN scan
+// and an FTS5 match are CPU-bound, so more of them than cores only adds
 // contention and SQLite connections.
-func searchConcurrency() int {
-	return min(runtime.GOMAXPROCS(0), 8)
-}
+//
+// The bound sits on the queries themselves rather than on the retrieval tasks,
+// because one task is no longer one query: a vector search over an index with
+// several sources runs a scan per source. Counting tasks let a single search
+// put four times the intended number of scans on the CPU. Holding a slot for a
+// task while its scans waited for slots of their own would deadlock, so only
+// the queries acquire.
+var dbQuerySem = make(chan struct{}, max(runtime.GOMAXPROCS(0), 1))
+
+func acquireDBQuery() { dbQuerySem <- struct{}{} }
+func releaseDBQuery() { <-dbQuerySem }
 
 // runRetrieval executes every task's searches concurrently and returns the
 // result sets in task order, so fusion does not depend on completion order.
@@ -145,14 +153,7 @@ func (s *Searcher) runRetrieval(tasks []retrievalTask, topK int, folders []strin
 	out := make([]taskResult, len(tasks))
 
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, searchConcurrency())
-	run := func(fn func()) {
-		wg.Go(func() {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			fn()
-		})
-	}
+	run := func(fn func()) { wg.Go(fn) }
 
 	for i := range tasks {
 		task := tasks[i]
