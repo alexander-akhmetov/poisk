@@ -55,7 +55,8 @@ func bootstrapWithConfig(cfg *config.Config) (*deps, error) {
 
 	var llmClient *llm.Client
 	if cfg.LLM.BaseURL != "" {
-		llmClient = llm.NewClient(cfg.LLM.BaseURL, cfg.LLM.APIKey, cfg.LLM.Model)
+		llmClient = llm.NewClient(cfg.LLM.BaseURL, cfg.LLM.APIKey, cfg.LLM.Model,
+			llm.WithExtraBody(cfg.LLM.ExtraBody))
 	}
 
 	indexer := index.NewIndexer(db, embedClient, cfg)

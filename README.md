@@ -99,6 +99,15 @@ Vectors are stored int8-quantized by default, which makes the index about 4x sma
 
 Halving `dimensions` roughly halves search time and index size. How much recall it costs depends on the model, so treat 512 as something to evaluate against your own corpus rather than a recommendation. The default stays 1024.
 
+Reranking and query expansion both ask the `[llm]` model for a short answer under a small token budget. A reasoning model spends that budget on thinking and returns empty content, so each search waits seconds for an answer it then discards. poisk turns thinking off automatically for Qwen3-family model names; if the server rejects the field, poisk drops it and retries without it.
+
+For a reasoning model poisk does not recognise, turn thinking off yourself:
+
+```toml
+[llm.extra_body.chat_template_kwargs]
+enable_thinking = false
+```
+
 Changing `model`, `dimensions`, or `quantization` re-embeds every folder. A poisk upgrade that bumps the internal schema version can also force one; targeted migrations preserve the existing vectors where a path exists.
 
 See [config.example.toml](config.example.toml) for all options, or the full [configuration reference](skills/setup/SKILL.md).

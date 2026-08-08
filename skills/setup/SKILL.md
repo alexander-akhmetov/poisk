@@ -132,12 +132,35 @@ Optional. Enables reranking and query expansion.
 | `base_url` | — | OpenAI-compatible chat API endpoint |
 | `api_key` | `""` | API key |
 | `model` | — | Chat model name |
+| `extra_body` | — | Extra fields merged into every chat completion request |
 
 ```toml
 [llm]
 base_url = "http://localhost:11434/v1"
 model = "llama3"
 ```
+
+#### Reasoning models
+
+Query expansion and reranking ask for a short answer under a small token budget (200 and 100 tokens). A reasoning model spends that budget on thinking and returns empty content, so poisk waits for the model and then throws the answer away: expansion falls back to the original query and reranking keeps the retrieval order. Each search pays several seconds for nothing.
+
+poisk handles the Qwen3 family on its own. When the model name matches (`qwen3`, `qwen-3`, at any routing prefix such as `mac-studio/qwen3.6-35b-a3b`), it adds `chat_template_kwargs = { enable_thinking = false }` to every request. If the server answers 4xx, poisk drops the field, retries without it, and stops sending it, so the name match cannot break a server that does not know the field.
+
+For any other reasoning model, set it yourself. On llama.cpp and vLLM:
+
+```toml
+[llm.extra_body.chat_template_kwargs]
+enable_thinking = false
+```
+
+Some servers take `reasoning_effort = "none"` instead. An explicit `chat_template_kwargs` always wins, so this is also how to turn thinking back **on** for a Qwen3 model:
+
+```toml
+[llm.extra_body.chat_template_kwargs]
+enable_thinking = true
+```
+
+If no switch works, set `rerank = false` and `query_expansion = false` rather than paying for stages that cannot produce an answer. An empty completion is reported as an error naming this cause, so the log says which stage was skipped and why.
 
 ### `[server]`
 

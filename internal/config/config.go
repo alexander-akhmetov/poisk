@@ -38,6 +38,10 @@ type LLMConfig struct {
 	BaseURL string `toml:"base_url"`
 	APIKey  string `toml:"api_key"`
 	Model   string `toml:"model"`
+	// ExtraBody is merged into every chat completion request body. Use it to
+	// pass server-specific options poisk has no field for, most importantly
+	// the switch that turns a reasoning model's thinking off.
+	ExtraBody map[string]any `toml:"extra_body"`
 }
 
 type EmbeddingConfig struct {

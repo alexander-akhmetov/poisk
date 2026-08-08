@@ -72,6 +72,27 @@ max_file_size_kb = 512
 # model = "llama3"
 # max_context_chunks = 10
 # system_prompt = "You are a helpful assistant. Answer based on the provided context."
+#
+# extra_body is merged into every chat completion request. Use it for
+# server-specific options poisk has no field for.
+#
+# Reasoning models need it. Query expansion and reranking ask for a short
+# answer under a small token budget, and a thinking model spends that budget on
+# reasoning and returns empty content: the search still waits for the model,
+# then discards the result.
+#
+# Qwen3-family model names are handled automatically: poisk sends
+# chat_template_kwargs.enable_thinking = false, and drops it if the server
+# rejects it. For any other reasoning model, set it here:
+# [llm.extra_body.chat_template_kwargs]
+# enable_thinking = false
+#
+# Some servers take reasoning_effort instead:
+# [llm.extra_body]
+# reasoning_effort = "none"
+#
+# An explicit chat_template_kwargs always wins, so this also turns thinking
+# back on for a Qwen3 model.
 
 # Optional: HTTP server mode for `poisk serve --http`.
 # A token is required in HTTP mode (fail closed) and grants read access to
