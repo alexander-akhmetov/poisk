@@ -54,6 +54,7 @@ func Open(dbPath string, dimensions int, quantization string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
+	db.SetMaxOpenConns(1)
 
 	// A search fans out into one query per source partition per query variant,
 	// so a dozen or more connections are live at once. The pool keeps 2 idle by
@@ -262,7 +263,6 @@ func (s *Store) initVec0() {
 	needsDrop := false
 	rows, err := s.db.Query("SELECT DISTINCT dimensions, quantization FROM embedding_meta")
 	if err == nil {
-		defer rows.Close()
 		for rows.Next() {
 			var storedDims int
 			var storedQuant string
@@ -274,6 +274,7 @@ func (s *Store) initVec0() {
 		if err := rows.Err(); err != nil {
 			slog.Warn("rows iteration error", "error", err)
 		}
+		rows.Close()
 	}
 	if needsDrop {
 		slog.Info("vec0 dimensions or quantization mismatch, recreating",
