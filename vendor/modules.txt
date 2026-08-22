@@ -2,9 +2,6 @@
 ## explicit; go 1.18
 github.com/BurntSushi/toml
 github.com/BurntSushi/toml/internal
-# github.com/asg017/sqlite-vec-go-bindings v0.1.6
-## explicit; go 1.22.5
-github.com/asg017/sqlite-vec-go-bindings/cgo
 # github.com/google/jsonschema-go v0.4.3
 ## explicit; go 1.23.0
 github.com/google/jsonschema-go/jsonschema

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
+	"github.com/alexander-akhmetov/poisk/internal/sqlitevec"
 	"github.com/mattn/go-sqlite3"
 )
 
@@ -28,7 +28,7 @@ const mmapSize = 4 << 30
 const maxIdleConns = 32
 
 func init() {
-	sqlite_vec.Auto()
+	sqlitevec.Auto()
 	sql.Register(driverName, &sqlite3.SQLiteDriver{
 		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
 			_, err := conn.Exec(fmt.Sprintf("PRAGMA mmap_size=%d", mmapSize), nil)

@@ -993,6 +993,63 @@ func TestVec0KNNRoundtrip(t *testing.T) {
 	}
 }
 
+// vec0 stores vectors in chunks of 1024 rows. Before sqlite-vec v0.1.7 a
+// delete only cleared the row's validity bit, so a reindex left the chunk
+// behind and the next insert allocated a new one. Deleting a whole chunk's
+// worth of vectors must now free it.
+func TestVec0DeleteFreesVectorChunks(t *testing.T) {
+	const rows = 2048 // two full chunks
+
+	tests := []struct {
+		name   string
+		delete func(*Store) error
+	}{
+		{"clear source", func(s *Store) error { return s.ClearSource("src") }},
+		{"delete file", func(s *Store) error { return s.DeleteFile("src", "main.go") }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, err := Open(filepath.Join(t.TempDir(), "chunks.db"), 3, QuantizationInt8)
+			if err != nil {
+				t.Fatalf("open: %v", err)
+			}
+			t.Cleanup(func() { s.Close() })
+			if !s.VecAvailable() {
+				t.Skip("vec0 not available")
+			}
+
+			entries := make([]Entry, rows)
+			for i := range entries {
+				entries[i] = Entry{LineNum: i + 1, Text: "chunk", Embedding: []float32{1, 0, 0}}
+			}
+			if err := s.InsertEntries("src", "main.go", entries); err != nil {
+				t.Fatalf("insert: %v", err)
+			}
+
+			before := vectorChunkCount(t, s)
+			if before < 2 {
+				t.Fatalf("expected at least 2 vector chunks after %d inserts, got %d", rows, before)
+			}
+			if err := tt.delete(s); err != nil {
+				t.Fatalf("delete: %v", err)
+			}
+			if after := vectorChunkCount(t, s); after >= before {
+				t.Fatalf("vector chunks not freed: %d before delete, %d after", before, after)
+			}
+		})
+	}
+}
+
+func vectorChunkCount(t *testing.T, s *Store) int {
+	t.Helper()
+	var n int
+	if err := s.DB().QueryRow("SELECT COUNT(*) FROM vec_embeddings_vector_chunks00").Scan(&n); err != nil {
+		t.Fatalf("count vector chunks: %v", err)
+	}
+	return n
+}
+
 func TestFTSMetadataColumnsAreIndexedAndSearchable(t *testing.T) {
 	s := openTestStore(t)
 	if !s.FTSAvailable() {
