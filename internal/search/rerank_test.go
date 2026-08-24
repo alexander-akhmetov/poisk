@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -38,6 +39,8 @@ func TestParseScores(t *testing.T) {
 		{"bare ranking indexes are rejected", "1 2 3", 3, nil},
 		{"clamped", "12,-1,5", 3, []float64{10, 0, 5}},
 		{"wrong count", "8,3", 3, nil},
+		{"short by one at scale", `{"scores":[8,3,7,5,4,6,2,9,1]}`, 10, []float64{8, 3, 7, 5, 4, 6, 2, 9, 1}},
+		{"short by two at scale", `{"scores":[8,3,7,5,4,6,2,9]}`, 10, nil},
 		{"wrong count extra", "[8,3,7,5]", 3, []float64{8, 3, 7}},
 		{"non-numeric", "high,low,mid", 3, nil},
 		{"empty", "", 3, nil},
@@ -108,6 +111,37 @@ func TestRerankTopN(t *testing.T) {
 	})
 	if len(reranked) != 4 {
 		t.Fatalf("got %d results, want 4 (2 reranked + 2 passthrough)", len(reranked))
+	}
+}
+
+func TestRerankPartialScores(t *testing.T) {
+	server := newTestLLMServer(`{"scores":[1,1,1,1,1,1,1,1,9]}`)
+	defer server.Close()
+
+	client := llm.NewClient(server.URL, "", "test")
+	results := make([]Result, 10)
+	for i := range results {
+		results[i] = Result{FilePath: fmt.Sprintf("%d.go", i), LineNum: 1, Score: 1 - float64(i)/10}
+	}
+	wantUnscored := results[9].Score
+
+	reranked := rerankResults(context.Background(), client, "test", results, 10, rerankBlendConfig{
+		TopRetrievalWeight:    0.8,
+		BottomRetrievalWeight: 0.2,
+	})
+	if len(reranked) != 10 {
+		t.Fatalf("got %d results, want 10", len(reranked))
+	}
+
+	pos := make(map[string]int, len(reranked))
+	for i, r := range reranked {
+		pos[r.FilePath] = i
+		if r.FilePath == "9.go" && r.Score != wantUnscored {
+			t.Fatalf("unscored result got score %f, want its retrieval score %f", r.Score, wantUnscored)
+		}
+	}
+	if pos["8.go"] > pos["1.go"] {
+		t.Fatalf("scored result 8.go ranked below 1.go: %d > %d", pos["8.go"], pos["1.go"])
 	}
 }
 

@@ -71,11 +71,17 @@ func rerankResults(ctx context.Context, client *llm.Client, query string, result
 		slog.Warn("failed to parse reranker scores, keeping original order", "response", resp)
 		return results
 	}
+	if len(scores) < len(candidates) {
+		slog.Warn("reranker returned fewer scores than documents, leaving the rest at their retrieval score",
+			"scores", len(scores), "documents", len(candidates))
+	}
 
 	blendCfg = normalizeBlendConfig(blendCfg)
 
-	// Position-aware blending: top results keep more retrieval weight
-	for i := range candidates {
+	// Position-aware blending: top results keep more retrieval weight. The ramp
+	// spans every candidate even when only some were scored, so a short
+	// response does not reweight the ones it did score.
+	for i := range scores {
 		positionWeight := blendCfg.TopRetrievalWeight
 		if len(candidates) > 1 {
 			progress := float64(i) / float64(len(candidates)-1)
@@ -318,12 +324,29 @@ func looksLikeOrdinalPrefix(values []float64, expected int) bool {
 	return true
 }
 
+// partialRerankMinDocs is the shortest document list where a response one score
+// short reads as the model miscounting rather than as a misparse. Below it the
+// count must be exact.
+const partialRerankMinDocs = 10
+
+// minScores is the fewest scores a response can carry and still be used.
+// Discarding a whole response over one missing score costs the round trip and
+// leaves every result unranked; the documents past the last score keep their
+// retrieval score.
+func minScores(expected int) int {
+	if expected >= partialRerankMinDocs {
+		return expected - 1
+	}
+	return expected
+}
+
 func clampAndPick(values []float64, expected int) []float64 {
-	if len(values) < expected {
+	if len(values) < minScores(expected) {
 		return nil
 	}
-	scores := make([]float64, expected)
-	for i := range expected {
+	n := min(len(values), expected)
+	scores := make([]float64, n)
+	for i := range n {
 		score := values[i]
 		if score < 0 {
 			score = 0
