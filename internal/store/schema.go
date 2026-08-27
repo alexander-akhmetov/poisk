@@ -2,7 +2,7 @@ package store
 
 import "strconv"
 
-const schemaVersion = 7
+const schemaVersion = 8
 
 // MaxVecK is the largest k sqlite-vec accepts in a KNN query. A larger k fails
 // the query outright instead of returning fewer rows.
@@ -45,10 +45,11 @@ CREATE INDEX IF NOT EXISTS idx_emb_source_file ON embeddings(source, file_path);
 CREATE INDEX IF NOT EXISTS idx_emb_meta ON embeddings(language, chunk_kind, symbol);
 
 CREATE TABLE IF NOT EXISTS embedding_meta (
-    source       TEXT PRIMARY KEY NOT NULL,
-    model        TEXT NOT NULL,
-    dimensions   INTEGER NOT NULL,
-    quantization TEXT NOT NULL
+    source          TEXT PRIMARY KEY NOT NULL,
+    model           TEXT NOT NULL,
+    dimensions      INTEGER NOT NULL,
+    quantization    TEXT NOT NULL,
+    max_input_bytes INTEGER NOT NULL DEFAULT 0
 );
 `
 

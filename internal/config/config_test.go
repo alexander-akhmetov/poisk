@@ -44,6 +44,16 @@ func TestDefaultConfigHasFusionWeights(t *testing.T) {
 	if cfg.Embedding.Matryoshka {
 		t.Fatal("default matryoshka must be off")
 	}
+	if cfg.Embedding.MaxInputBytes != 8000 {
+		t.Fatalf("default max_input_bytes = %d, want 8000", cfg.Embedding.MaxInputBytes)
+	}
+	if cfg.Embedding.BatchMaxBytes != 65536 {
+		t.Fatalf("default batch_max_bytes = %d, want 65536", cfg.Embedding.BatchMaxBytes)
+	}
+	if MinInputBytes > cfg.Embedding.MaxInputBytes || cfg.Embedding.MaxInputBytes > MaxInputBytesCeiling {
+		t.Fatalf("default max_input_bytes %d outside the accepted range [%d, %d]",
+			cfg.Embedding.MaxInputBytes, MinInputBytes, MaxInputBytesCeiling)
+	}
 }
 
 func TestValidateRejectsInvalidFusionWeights(t *testing.T) {
@@ -134,6 +144,31 @@ func TestValidateRejectsInvalidFusionWeights(t *testing.T) {
 			name: "empty quantization",
 			edit: func(c *Config) { c.Embedding.Quantization = "" },
 			want: "embedding.quantization",
+		},
+		{
+			name: "max input bytes below the rune minimum",
+			edit: func(c *Config) { c.Embedding.MaxInputBytes = MinInputBytes - 1 },
+			want: "embedding.max_input_bytes",
+		},
+		{
+			name: "max input bytes unset",
+			edit: func(c *Config) { c.Embedding.MaxInputBytes = 0 },
+			want: "embedding.max_input_bytes",
+		},
+		{
+			name: "max input bytes above the ceiling",
+			edit: func(c *Config) { c.Embedding.MaxInputBytes = MaxInputBytesCeiling + 1 },
+			want: "embedding.max_input_bytes",
+		},
+		{
+			name: "batch byte budget below one input",
+			edit: func(c *Config) { c.Embedding.BatchMaxBytes = c.Embedding.MaxInputBytes - 1 },
+			want: "embedding.batch_max_bytes",
+		},
+		{
+			name: "batch byte budget unset",
+			edit: func(c *Config) { c.Embedding.BatchMaxBytes = 0 },
+			want: "embedding.batch_max_bytes",
 		},
 	}
 
@@ -408,6 +443,35 @@ batch_size = 10
 			t.Errorf("error = %q, want 'config validation' substring", err.Error())
 		}
 	})
+}
+
+func TestLoadEmbeddingByteLimits(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	dir := filepath.Join(tmp, "poisk")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := `
+[embedding]
+max_input_bytes = 4000
+batch_max_bytes = 32768
+`
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Embedding.MaxInputBytes != 4000 {
+		t.Errorf("max_input_bytes = %d, want 4000", cfg.Embedding.MaxInputBytes)
+	}
+	if cfg.Embedding.BatchMaxBytes != 32768 {
+		t.Errorf("batch_max_bytes = %d, want 32768", cfg.Embedding.BatchMaxBytes)
+	}
 }
 
 func TestLoadFolderPatternOverrides(t *testing.T) {

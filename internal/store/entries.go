@@ -105,7 +105,7 @@ func (s *Store) Count(source string) (int, error) {
 func (s *Store) GetEntriesByPath(source, filePath string) ([]Entry, error) {
 	rows, err := s.db.Query(
 		`SELECT file_path, line_num, end_line, chunk_text, folder, language, chunk_kind, symbol
-		FROM embeddings WHERE source = ? AND file_path = ? ORDER BY line_num`,
+		FROM embeddings WHERE source = ? AND file_path = ? ORDER BY line_num, id`,
 		source, filePath,
 	)
 	if err != nil {

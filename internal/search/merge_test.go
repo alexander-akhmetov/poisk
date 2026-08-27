@@ -246,3 +246,47 @@ func abs(x float64) float64 {
 	}
 	return x
 }
+
+func TestMergeResultsUsesStoredRowIdentity(t *testing.T) {
+	tests := []struct {
+		name string
+		vec  []Result
+		fts  []Result
+		want int
+	}{
+		{
+			name: "one row from both backends fuses once",
+			vec:  []Result{{RowID: 7, FilePath: "a.go", LineNum: 10, Text: "vec text"}},
+			fts:  []Result{{RowID: 7, FilePath: "a.go", LineNum: 10, Text: "fts text"}},
+			want: 1,
+		},
+		{
+			name: "fragments sharing a file and line stay separate",
+			vec:  []Result{{RowID: 7, FilePath: "a.go", LineNum: 10, Text: "first half"}},
+			fts:  []Result{{RowID: 8, FilePath: "a.go", LineNum: 10, Text: "second half"}},
+			want: 2,
+		},
+		{
+			name: "results without a row id still key on file and line",
+			vec:  []Result{{FilePath: "a.go", LineNum: 10, Text: "vec text"}},
+			fts:  []Result{{FilePath: "a.go", LineNum: 10, Text: "fts text"}},
+			want: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mergeResults(tt.vec, tt.fts, 60, 10)
+			if len(got) != tt.want {
+				t.Fatalf("got %d results, want %d", len(got), tt.want)
+			}
+			if tt.want == 1 {
+				// Both backends ranked it first, so both contributions land.
+				want := 2.0 / 61.0
+				if abs(got[0].Score-want) > 1e-9 {
+					t.Fatalf("fused score = %f, want %f", got[0].Score, want)
+				}
+			}
+		})
+	}
+}

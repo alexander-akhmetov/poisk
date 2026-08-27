@@ -5,9 +5,9 @@
 # Any OpenAI-compatible embedding API (Ollama, LM Studio, OpenAI, etc.)
 base_url = "http://localhost:11434/v1"
 api_key = ""
-# Changing model, dimensions, or quantization re-embeds every folder. A poisk
-# upgrade that bumps the internal schema version can also force one; targeted
-# migrations preserve the existing vectors where a path exists.
+# Changing model, dimensions, quantization, or max_input_bytes re-embeds every
+# folder. A poisk upgrade that bumps the internal schema version can also force
+# one; targeted migrations preserve the existing vectors where a path exists.
 model = "qwen3-embedding:4b"
 # Vector width. Also a latency lever: sqlite-vec scans every vector on every
 # query, so search cost is linear in dimensions. Measured on 200k vectors at
@@ -15,7 +15,17 @@ model = "qwen3-embedding:4b"
 # smaller width costs depends on the model, so evaluate 512 against your own
 # corpus before adopting it. The default stays 1024.
 dimensions = 1024
+# Four size limits that are easy to confuse:
+#   max_input_bytes  splits one chunk's text, so no single embedding input can
+#                    occupy the provider for minutes. Accepted range 4 to 8000.
+#   batch_size       inputs per embedding request.
+#   batch_max_bytes  summed raw text of one request. It counts chunk bytes, not
+#                    the JSON body poisk sends or the tokens the provider bills,
+#                    both of which are larger. Must be >= max_input_bytes.
+#   [index].max_file_size_kb skips whole files before any of this.
+max_input_bytes = 8000
 batch_size = 50
+batch_max_bytes = 65536
 send_dimensions = true
 # Vector storage type: "int8" (~4x smaller index) or "float32".
 quantization = "int8"

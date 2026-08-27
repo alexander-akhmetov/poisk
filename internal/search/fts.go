@@ -263,12 +263,17 @@ func searchFTS(s *store.Store, queryText string, topK int, folders []string, fil
 	return results, nil
 }
 
+// resultKey identifies one stored chunk. Results built by hand in tests carry
+// no row id, so those still fall back to file and line.
 func resultKey(r Result) string {
+	if r.RowID != 0 {
+		return fmt.Sprintf("row:%d", r.RowID)
+	}
 	return fmt.Sprintf("%s:%d", r.FilePath, r.LineNum)
 }
 
 func queryFTS(s *store.Store, ftsQuery string, limit int, folders []string) ([]Result, error) {
-	query := `SELECT file_path, line_num, end_line, chunk_text, bm25(chunks_fts) AS rank, COALESCE(folder, ''), language, chunk_kind, symbol
+	query := `SELECT rowid, file_path, line_num, end_line, chunk_text, bm25(chunks_fts) AS rank, COALESCE(folder, ''), language, chunk_kind, symbol
 		FROM chunks_fts
 		WHERE chunks_fts MATCH ?`
 	args := make([]any, 0, 2)
@@ -288,7 +293,7 @@ func queryFTS(s *store.Store, ftsQuery string, limit int, folders []string) ([]R
 	for rows.Next() {
 		var r Result
 		var rank float64
-		if err := rows.Scan(&r.FilePath, &r.LineNum, &r.EndLine, &r.Text, &rank, &r.Folder, &r.Language, &r.Kind, &r.Symbol); err != nil {
+		if err := rows.Scan(&r.RowID, &r.FilePath, &r.LineNum, &r.EndLine, &r.Text, &rank, &r.Folder, &r.Language, &r.Kind, &r.Symbol); err != nil {
 			return nil, err
 		}
 		ar := math.Abs(rank)

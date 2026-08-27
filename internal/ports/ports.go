@@ -20,8 +20,8 @@ type ChunkStore interface {
 	TrackedFileCount(source string) (int, error)
 
 	// Model metadata tracking (for change detection).
-	ModelChanged(source, model string, dimensions int, quantization string) (domain.ModelChange, error)
-	UpdateMeta(source, model string, dimensions int, quantization string) error
+	ModelChanged(source, model string, dimensions int, quantization string, maxInputBytes int) (domain.ModelChange, error)
+	UpdateMeta(source, model string, dimensions int, quantization string, maxInputBytes int) error
 	AllSources() ([]string, error)
 
 	// Index status.

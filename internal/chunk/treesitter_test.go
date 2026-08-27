@@ -877,7 +877,7 @@ func TestSplitLargeMarkdownSection(t *testing.T) {
 	// Build markdown with nested headings (to produce a heading path >= 20 chars)
 	// followed by >8000 bytes of continuous text. The text has no blank-line
 	// paragraph breaks, so it accumulates into a single flush() call that
-	// exceeds maxSectionChars and triggers splitLargeSection.
+	// exceeds maxSectionBytes and triggers splitLargeSection.
 	//
 	// splitLargeSection splits on "\n\n". The only "\n\n" comes from the
 	// heading path being prepended: "headingPath\n\ncontent". A sufficiently

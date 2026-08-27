@@ -54,7 +54,21 @@ type EmbeddingConfig struct {
 	SendDimensions bool   `toml:"send_dimensions"` // send dimensions param in API request
 	Matryoshka     bool   `toml:"matryoshka"`      // truncate longer API vectors to dimensions and renormalize
 	Quantization   string `toml:"quantization"`    // vector storage type: "int8" or "float32"
+	// MaxInputBytes caps one embedding input. Every chunker's output is cut
+	// down to it, so no single chunk can occupy the provider for minutes.
+	MaxInputBytes int `toml:"max_input_bytes"`
+	// BatchMaxBytes caps the summed raw text of one embedding request. It
+	// counts chunk bytes, not the marshaled JSON body or provider tokens.
+	BatchMaxBytes int `toml:"batch_max_bytes"`
 }
+
+// MaxInputBytesCeiling is the largest per-input limit the config accepts. A
+// higher value would let configuration restore the oversized inputs these
+// limits exist to prevent.
+const MaxInputBytesCeiling = 8000
+
+// MinInputBytes is the smallest per-input limit that still holds any UTF-8 rune.
+const MinInputBytes = 4
 
 type SearchConfig struct {
 	RRFk                int           `toml:"rrf_k"` // RRF constant, default 60
@@ -124,6 +138,8 @@ func DefaultConfig() Config {
 			BatchSize:      50,
 			SendDimensions: true,
 			Quantization:   "int8",
+			MaxInputBytes:  MaxInputBytesCeiling,
+			BatchMaxBytes:  65536,
 		},
 		Search: SearchConfig{
 			RRFk:                60,
@@ -208,6 +224,14 @@ func (c *Config) validate() error {
 	}
 	if c.Embedding.Quantization != "int8" && c.Embedding.Quantization != "float32" {
 		return fmt.Errorf("embedding.quantization must be \"int8\" or \"float32\", got %q", c.Embedding.Quantization)
+	}
+	if c.Embedding.MaxInputBytes < MinInputBytes || c.Embedding.MaxInputBytes > MaxInputBytesCeiling {
+		return fmt.Errorf("embedding.max_input_bytes must be between %d and %d, got %d",
+			MinInputBytes, MaxInputBytesCeiling, c.Embedding.MaxInputBytes)
+	}
+	if c.Embedding.BatchMaxBytes < c.Embedding.MaxInputBytes {
+		return fmt.Errorf("embedding.batch_max_bytes must be >= embedding.max_input_bytes, got %d < %d",
+			c.Embedding.BatchMaxBytes, c.Embedding.MaxInputBytes)
 	}
 	return c.Search.validate()
 }

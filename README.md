@@ -110,7 +110,9 @@ For a reasoning model poisk does not recognise, turn thinking off yourself:
 enable_thinking = false
 ```
 
-Changing `model`, `dimensions`, or `quantization` re-embeds every folder. A poisk upgrade that bumps the internal schema version can also force one; targeted migrations preserve the existing vectors where a path exists.
+Two settings bound what one embedding request carries. `max_input_bytes` (default 8000) is the byte ceiling for a single input: chunk text over it is split, so no one chunk can occupy the provider for minutes. `batch_max_bytes` (default 65536) is the summed raw chunk text of one request, alongside the existing `batch_size` input count. Both count chunk bytes, not the JSON body poisk sends or the tokens the provider counts. `[index].max_file_size_kb` is separate again: it skips whole files before any chunking.
+
+Changing `model`, `dimensions`, `quantization`, or `max_input_bytes` re-embeds every folder. A poisk upgrade that bumps the internal schema version can also force one; targeted migrations preserve the existing vectors where a path exists.
 
 See [config.example.toml](config.example.toml) for all options, or the full [configuration reference](skills/setup/SKILL.md).
 

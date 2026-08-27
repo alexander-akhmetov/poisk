@@ -26,6 +26,12 @@ type Result struct {
 	Kind     string
 	Symbol   string
 	Context  []string
+	// RowID is the embeddings row this result came from, shared by the FTS and
+	// vec0 tables. Deduplication and fusion key on it, because a chunk split to
+	// fit the input limit keeps the line range of the region it came from and
+	// so shares file and line with its siblings. It stays internal to the
+	// package: nothing outside search identifies a result by storage row.
+	RowID int64
 }
 
 // maxTopK bounds how many results a caller can ask for. top_k arrives

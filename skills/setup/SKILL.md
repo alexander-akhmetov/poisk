@@ -64,10 +64,16 @@ Any OpenAI-compatible embedding API. Defaults to local Ollama with `qwen3-embedd
 | `api_key` | `""` | API key (empty for local Ollama) |
 | `model` | `qwen3-embedding:4b` | Embedding model name |
 | `dimensions` | `1024` | Embedding vector dimensions (qwen3-embedding supports 32–4096). Also a latency lever, see below |
-| `batch_size` | `50` | Chunks per embedding request |
+| `max_input_bytes` | `8000` | Byte ceiling for one embedding input. Chunk text longer than this is split. Accepted range 4 to 8000 |
+| `batch_size` | `50` | Inputs per embedding request |
+| `batch_max_bytes` | `65536` | Summed raw chunk text per embedding request. Must be >= `max_input_bytes` |
 | `send_dimensions` | `true` | Include dimensions parameter in API requests |
 | `quantization` | `"int8"` | Vector storage type: `"int8"` (~4x smaller index) or `"float32"` |
 | `matryoshka` | `false` | Truncate longer API vectors to `dimensions` and renormalize — for providers that ignore the dimensions parameter (e.g. Ollama) |
+
+**Three size limits, three units.** `max_input_bytes` splits one chunk's text so no single input can occupy the provider for minutes. `batch_max_bytes` partitions requests by summed raw chunk text; it does not cap the JSON body poisk sends or the tokens the provider counts, both of which are larger. `[index].max_file_size_kb` skips whole files before any chunking happens.
+
+Changing `max_input_bytes` re-chunks and re-embeds every folder, the way `model`, `dimensions` and `quantization` already do, because the stored chunks were cut to the old limit.
 
 **`dimensions` and search latency.** sqlite-vec has no approximate index, so every query scans every vector and the cost is linear in dimensions. Measured on 200k vectors at k=100:
 
@@ -241,7 +247,9 @@ Two things matter here:
 base_url = "http://localhost:11434/v1"
 model = "qwen3-embedding:4b"
 dimensions = 1024
+max_input_bytes = 8000
 batch_size = 50
+batch_max_bytes = 65536
 send_dimensions = true
 
 [search]

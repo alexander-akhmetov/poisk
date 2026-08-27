@@ -2,7 +2,9 @@ package chunk
 
 import "strings"
 
-const maxSectionChars = 8000
+// maxSectionBytes is what the Markdown splitter aims for. capChunkSize holds
+// the result to the configured ceiling; this only decides where sections split.
+const maxSectionBytes = DefaultMaxInputBytes
 
 func chunkMarkdown(content string) []Chunk {
 	lines := strings.Split(content, "\n")
@@ -28,7 +30,7 @@ func chunkMarkdown(content string) []Chunk {
 		endLine := paraStart + len(para) - 1
 
 		// Token-budget splitting for large sections
-		if len(text) > maxSectionChars {
+		if len(text) > maxSectionBytes {
 			subChunks := splitLargeSection(text, paraStart, endLine, currentHeadingPath)
 			chunks = append(chunks, subChunks...)
 		} else {
@@ -145,7 +147,7 @@ func splitLargeSection(text string, startLine, endLine int, symbol string) []Chu
 	for _, para := range paragraphs {
 		paraLines := strings.Count(para, "\n") + 1
 
-		if buf.Len()+len(para) > maxSectionChars && buf.Len() > 0 {
+		if buf.Len()+len(para) > maxSectionBytes && buf.Len() > 0 {
 			t := strings.TrimSpace(buf.String())
 			if len(t) >= 20 {
 				chunks = append(chunks, Chunk{

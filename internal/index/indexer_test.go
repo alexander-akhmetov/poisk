@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,23 +33,32 @@ type testEmbeddingResponse struct {
 	} `json:"data"`
 }
 
-// embeddingRecorder records the size of every embedding request the indexer
-// sends, so tests can assert how chunks were grouped into requests.
+// embeddingRecorder records the input count and raw text bytes of every
+// embedding request the indexer sends, so tests can assert how chunks were
+// partitioned into requests.
 type embeddingRecorder struct {
 	mu    sync.Mutex
 	sizes []int
+	bytes []int
 }
 
-func (r *embeddingRecorder) record(n int) {
+func (r *embeddingRecorder) record(inputs, bytes int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.sizes = append(r.sizes, n)
+	r.sizes = append(r.sizes, inputs)
+	r.bytes = append(r.bytes, bytes)
 }
 
 func (r *embeddingRecorder) requestSizes() []int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]int(nil), r.sizes...)
+}
+
+func (r *embeddingRecorder) requestBytes() []int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]int(nil), r.bytes...)
 }
 
 func newTestEmbeddingServer(t *testing.T, dims int, failOnCall int32) *httptest.Server {
@@ -64,25 +74,40 @@ func newRecordingEmbeddingServer(t *testing.T, dims int, failOnCall int32) (*htt
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		call := calls.Add(1)
+		req := decodeEmbeddingRequest(t, r)
+		// Recorded before the failure decision, so a test can see which
+		// sub-batches the indexer sent before one of them failed.
+		rec.record(len(req.Input), inputBytes(req.Input))
 		if failOnCall > 0 && call >= failOnCall {
 			http.Error(w, "embedding failure", http.StatusInternalServerError)
 			return
 		}
 
-		rec.record(writeEmbeddings(t, w, r, dims))
+		writeEmbeddings(t, w, req, dims)
 	}))
 	return server, rec
 }
 
-// writeEmbeddings answers an embedding request with unit vectors and returns
-// the number of inputs it was given.
-func writeEmbeddings(t *testing.T, w http.ResponseWriter, r *http.Request, dims int) int {
+func decodeEmbeddingRequest(t *testing.T, r *http.Request) testEmbeddingRequest {
 	t.Helper()
-
 	var req testEmbeddingRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		t.Fatalf("decode request: %v", err)
 	}
+	return req
+}
+
+func inputBytes(inputs []string) int {
+	total := 0
+	for _, in := range inputs {
+		total += len(in)
+	}
+	return total
+}
+
+// writeEmbeddings answers an embedding request with unit vectors.
+func writeEmbeddings(t *testing.T, w http.ResponseWriter, req testEmbeddingRequest, dims int) {
+	t.Helper()
 
 	resp := testEmbeddingResponse{
 		Data: make([]struct {
@@ -100,18 +125,19 @@ func writeEmbeddings(t *testing.T, w http.ResponseWriter, r *http.Request, dims 
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		t.Fatalf("encode response: %v", err)
 	}
-	return len(req.Input)
 }
 
 // newCancellingEmbeddingServer answers requests until cancelOnCall, then cancels
 // the indexing context instead of replying. That is what Ctrl-C during an
-// embedding request looks like to the indexer.
-func newCancellingEmbeddingServer(t *testing.T, dims int, cancelOnCall int32, cancel context.CancelFunc) *httptest.Server {
+// embedding request looks like to the indexer. It returns the counters so a
+// test can pick the call to cancel once it knows how many requests a run takes.
+func newCancellingEmbeddingServer(t *testing.T, dims int, cancel context.CancelFunc) (*httptest.Server, *atomic.Int32, *atomic.Int32) {
 	t.Helper()
 
-	var calls atomic.Int32
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if calls.Add(1) >= cancelOnCall {
+	var calls, cancelOnCall atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := calls.Add(1)
+		if n := cancelOnCall.Load(); n > 0 && call >= n {
 			// Draining the body lets the server see the aborting client and end
 			// this request; the deadline keeps a stuck one from hanging the test.
 			_, _ = io.Copy(io.Discard, r.Body)
@@ -123,8 +149,9 @@ func newCancellingEmbeddingServer(t *testing.T, dims int, cancelOnCall int32, ca
 			}
 			return
 		}
-		writeEmbeddings(t, w, r, dims)
+		writeEmbeddings(t, w, decodeEmbeddingRequest(t, r), dims)
 	}))
+	return server, &calls, &cancelOnCall
 }
 
 func newTestIndexer(t *testing.T, folder, baseURL string) (*Indexer, *store.Store) {
@@ -459,60 +486,85 @@ func TestIndexFolderFailedGroupClearsEveryFileInIt(t *testing.T) {
 }
 
 func TestIndexFolderCancelledGroupKeepsItsIndexedData(t *testing.T) {
-	dir, _ := filepath.EvalSymlinks(t.TempDir())
-
-	const files, chunksPerFile = 4, 6
-	t1 := time.Unix(1_700_004_000, 100)
-	for i := range files {
-		writeFileWithMtime(t, filepath.Join(dir, fmt.Sprintf("doc-%d.md", i)), sectionedMarkdown(chunksPerFile), t1)
+	tests := []struct {
+		name string
+		// cancelAfter is how many of the second run's requests are answered
+		// before one is cancelled.
+		cancelAfter int32
+		tweak       func(*config.Config)
+	}{
+		{
+			name:        "one request per group",
+			cancelAfter: 0,
+			tweak:       func(cfg *config.Config) { cfg.Embedding.BatchSize = 50 },
+		},
+		{
+			name:        "byte-bounded sub-batches",
+			cancelAfter: 1,
+			tweak: func(cfg *config.Config) {
+				cfg.Embedding.BatchSize = 50
+				cfg.Embedding.BatchMaxBytes = 1200
+			},
+		},
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir, _ := filepath.EvalSymlinks(t.TempDir())
 
-	// The first run's request is answered; the second run's is cancelled.
-	server := newCancellingEmbeddingServer(t, 3, 2, cancel)
-	defer server.Close()
-	indexer, db := newTestIndexerWithConfig(t, dir, server.URL, func(cfg *config.Config) {
-		cfg.Embedding.BatchSize = 50
-	})
+			const files, chunksPerFile, bodyBytes = 4, 6, 400
+			t1 := time.Unix(1_700_004_000, 100)
+			for i := range files {
+				writeFileWithMtime(t, filepath.Join(dir, fmt.Sprintf("doc-%d.md", i)), paddedMarkdown(chunksPerFile, bodyBytes), t1)
+			}
 
-	if _, err := indexer.IndexFolder(context.Background(), dir); err != nil {
-		t.Fatalf("first index: %v", err)
-	}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
-	t2 := time.Unix(1_700_004_000, 200)
-	for i := range files {
-		writeFileWithMtime(t, filepath.Join(dir, fmt.Sprintf("doc-%d.md", i)), sectionedMarkdown(chunksPerFile+1), t2)
-	}
+			server, calls, cancelOnCall := newCancellingEmbeddingServer(t, 3, cancel)
+			defer server.Close()
+			indexer, db := newTestIndexerWithConfig(t, dir, server.URL, tt.tweak)
 
-	stats, err := indexer.IndexFolder(ctx, dir)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("cancelled run returned %v, want context.Canceled", err)
-	}
-	if stats.Errors != files {
-		t.Fatalf("Errors=%d after a cancelled group, want one per grouped file (%d)", stats.Errors, files)
-	}
+			// The first run is answered in full, whatever it takes.
+			if _, err := indexer.IndexFolder(context.Background(), dir); err != nil {
+				t.Fatalf("first index: %v", err)
+			}
+			cancelOnCall.Store(calls.Load() + tt.cancelAfter + 1)
 
-	// A cancellation says nothing about the files in the group, so their
-	// previously indexed chunks must survive it.
-	count, err := db.Count(dir)
-	if err != nil {
-		t.Fatalf("count after cancelled group: %v", err)
-	}
-	if count != files*chunksPerFile {
-		t.Fatalf("count=%d after a cancelled group, want the %d chunks from the last successful run", count, files*chunksPerFile)
-	}
+			t2 := time.Unix(1_700_004_000, 200)
+			for i := range files {
+				writeFileWithMtime(t, filepath.Join(dir, fmt.Sprintf("doc-%d.md", i)), paddedMarkdown(chunksPerFile+1, bodyBytes), t2)
+			}
 
-	tracked, err := db.TrackedFiles(dir)
-	if err != nil {
-		t.Fatalf("tracked files: %v", err)
-	}
-	for i := range files {
-		fp := filepath.Join(dir, fmt.Sprintf("doc-%d.md", i))
-		if tracked[fp] != t1.UnixNano() {
-			t.Fatalf("%s mtime=%d, want the previous successful mtime %d", fp, tracked[fp], t1.UnixNano())
-		}
+			stats, err := indexer.IndexFolder(ctx, dir)
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("cancelled run returned %v, want context.Canceled", err)
+			}
+			if stats.Errors != files {
+				t.Fatalf("Errors=%d after a cancelled group, want one per grouped file (%d)", stats.Errors, files)
+			}
+
+			// A cancellation says nothing about the files in the group, so their
+			// previously indexed chunks must survive it.
+			count, err := db.Count(dir)
+			if err != nil {
+				t.Fatalf("count after cancelled group: %v", err)
+			}
+			if count != files*chunksPerFile {
+				t.Fatalf("count=%d after a cancelled group, want the %d chunks from the last successful run", count, files*chunksPerFile)
+			}
+
+			tracked, err := db.TrackedFiles(dir)
+			if err != nil {
+				t.Fatalf("tracked files: %v", err)
+			}
+			for i := range files {
+				fp := filepath.Join(dir, fmt.Sprintf("doc-%d.md", i))
+				if tracked[fp] != t1.UnixNano() {
+					t.Fatalf("%s mtime=%d, want the previous successful mtime %d", fp, tracked[fp], t1.UnixNano())
+				}
+			}
+		})
 	}
 }
 
@@ -689,7 +741,7 @@ func TestIndexAllPrunesRemovedFolders(t *testing.T) {
 	}
 
 	// Verify meta is cleared too
-	mc, _ := db.ModelChanged(dir2, "test-embedding", 3, cfg.Embedding.Quantization)
+	mc, _ := db.ModelChanged(dir2, "test-embedding", 3, cfg.Embedding.Quantization, cfg.Embedding.MaxInputBytes)
 	if !mc.Changed {
 		t.Fatal("expected meta cleared for pruned folder")
 	}
@@ -757,5 +809,192 @@ func TestIndexFolderRebuildsOnQuantizationChange(t *testing.T) {
 	}
 	if vecCount == 0 {
 		t.Fatal("expected vec embeddings after rebuild")
+	}
+}
+
+func TestPartitionByBudget(t *testing.T) {
+	sized := func(sizes ...int) []string {
+		out := make([]string, len(sizes))
+		for i, n := range sizes {
+			out[i] = strings.Repeat("x", n)
+		}
+		return out
+	}
+
+	tests := []struct {
+		name     string
+		texts    []string
+		maxCount int
+		maxBytes int
+		want     [][]string
+	}{
+		{
+			name:     "no texts",
+			texts:    nil,
+			maxCount: 4,
+			maxBytes: 100,
+			want:     nil,
+		},
+		{
+			name:     "count budget fills first",
+			texts:    sized(1, 1, 1, 1, 1),
+			maxCount: 2,
+			maxBytes: 100,
+			want:     [][]string{sized(1, 1), sized(1, 1), sized(1)},
+		},
+		{
+			name:     "byte budget fills first",
+			texts:    sized(40, 40, 40),
+			maxCount: 10,
+			maxBytes: 100,
+			want:     [][]string{sized(40, 40), sized(40)},
+		},
+		{
+			name:     "a batch exactly on the byte budget is not split",
+			texts:    sized(50, 50, 10),
+			maxCount: 10,
+			maxBytes: 100,
+			want:     [][]string{sized(50, 50), sized(10)},
+		},
+		{
+			name:     "one byte over the budget starts a new request",
+			texts:    sized(50, 51),
+			maxCount: 10,
+			maxBytes: 100,
+			want:     [][]string{sized(50), sized(51)},
+		},
+		{
+			name:     "multi-byte runes count their bytes, not their runes",
+			texts:    []string{strings.Repeat("é", 30), strings.Repeat("é", 30)},
+			maxCount: 10,
+			maxBytes: 100,
+			want:     [][]string{{strings.Repeat("é", 30)}, {strings.Repeat("é", 30)}},
+		},
+		{
+			name:     "an input over the whole budget goes out alone",
+			texts:    sized(200, 10),
+			maxCount: 10,
+			maxBytes: 100,
+			want:     [][]string{sized(200), sized(10)},
+		},
+		{
+			name:     "non-positive limits mean unbounded",
+			texts:    sized(200, 200),
+			maxCount: 0,
+			maxBytes: 0,
+			want:     [][]string{sized(200, 200)},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := partitionByBudget(tt.texts, tt.maxCount, tt.maxBytes)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %d batches, want %d", len(got), len(tt.want))
+			}
+			for i := range tt.want {
+				if !slices.Equal(got[i], tt.want[i]) {
+					t.Fatalf("batch %d = %d inputs of %d bytes, want %d inputs of %d bytes",
+						i, len(got[i]), inputBytes(got[i]), len(tt.want[i]), inputBytes(tt.want[i]))
+				}
+			}
+		})
+	}
+}
+
+// paddedMarkdown returns markdown that chunks into sections chunks, each with
+// bodyBytes of filler, so a test can size requests by bytes rather than count.
+func paddedMarkdown(sections, bodyBytes int) string {
+	var sb strings.Builder
+	for i := range sections {
+		fmt.Fprintf(&sb, "## Section %d\n\n%s\n\n", i, strings.Repeat("word ", bodyBytes/5))
+	}
+	return sb.String()
+}
+
+func TestIndexFolderSplitsRequestsOnTheByteBudget(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+
+	const files, chunksPerFile, bodyBytes = 3, 4, 400
+	mtime := time.Unix(1_700_005_000, 100)
+	for i := range files {
+		writeFileWithMtime(t, filepath.Join(dir, fmt.Sprintf("doc-%d.md", i)), paddedMarkdown(chunksPerFile, bodyBytes), mtime)
+	}
+
+	server, rec := newRecordingEmbeddingServer(t, 3, 0)
+	defer server.Close()
+	// The count budget alone would send all 12 chunks in one request; the byte
+	// budget is what splits them.
+	const batchMaxBytes = 1200
+	indexer, db := newTestIndexerWithConfig(t, dir, server.URL, func(cfg *config.Config) {
+		cfg.Embedding.BatchSize = 50
+		cfg.Embedding.BatchMaxBytes = batchMaxBytes
+	})
+
+	stats, err := indexer.IndexFolder(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("index: %v", err)
+	}
+	if stats.Errors != 0 {
+		t.Fatalf("Errors=%d, want 0", stats.Errors)
+	}
+
+	sizes := rec.requestSizes()
+	if len(sizes) < 2 {
+		t.Fatalf("embedding requests = %v, want more than one", sizes)
+	}
+	for i, b := range rec.requestBytes() {
+		if b > batchMaxBytes && sizes[i] > 1 {
+			t.Fatalf("request %d carried %d bytes over the %d budget in %d inputs", i, b, batchMaxBytes, sizes[i])
+		}
+	}
+
+	// Every file still reaches the store in one InsertEntries call, even
+	// though its chunks were spread over several requests.
+	for i := range files {
+		fp := filepath.Join(dir, fmt.Sprintf("doc-%d.md", i))
+		entries, err := db.GetEntriesByPath(dir, fp)
+		if err != nil {
+			t.Fatalf("get entries: %v", err)
+		}
+		if len(entries) != chunksPerFile {
+			t.Fatalf("%s has %d entries, want %d", fp, len(entries), chunksPerFile)
+		}
+	}
+}
+
+func TestIndexFolderLaterByteSubBatchFailureWritesNothing(t *testing.T) {
+	dir, _ := filepath.EvalSymlinks(t.TempDir())
+
+	const files, chunksPerFile, bodyBytes = 2, 4, 400
+	t1 := time.Unix(1_700_006_000, 100)
+	for i := range files {
+		writeFileWithMtime(t, filepath.Join(dir, fmt.Sprintf("doc-%d.md", i)), paddedMarkdown(chunksPerFile, bodyBytes), t1)
+	}
+
+	// The first byte-bounded sub-batch succeeds, the second fails.
+	server, rec := newRecordingEmbeddingServer(t, 3, 2)
+	defer server.Close()
+	indexer, db := newTestIndexerWithConfig(t, dir, server.URL, func(cfg *config.Config) {
+		cfg.Embedding.BatchSize = 50
+		cfg.Embedding.BatchMaxBytes = 1200
+	})
+
+	stats, err := indexer.IndexFolder(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("index: %v", err)
+	}
+	if len(rec.requestSizes()) < 2 {
+		t.Fatalf("embedding requests = %v, want a successful one before the failure", rec.requestSizes())
+	}
+	if stats.FilesProcessed != 0 {
+		t.Fatalf("FilesProcessed=%d after a failed sub-batch, want 0", stats.FilesProcessed)
+	}
+	count, err := db.Count(dir)
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("count=%d after a failed sub-batch, want no partial replacement", count)
 	}
 }

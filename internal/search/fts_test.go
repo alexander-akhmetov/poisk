@@ -367,3 +367,45 @@ func TestSearchFTSAtMaxTopKRunsEveryStageWithinTheLimit(t *testing.T) {
 		t.Fatalf("%d results carry both terms, want all 400 from the strict AND stage", both)
 	}
 }
+
+func TestSearchFTSKeepsFragmentsThatShareOneSourceLine(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "fragments.db")
+	s, err := store.Open(dbPath, 3, store.QuantizationInt8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if !s.FTSAvailable() {
+		t.Skip("FTS5 not available")
+	}
+
+	// One oversized chunk cut into three: same file, same line range, three
+	// stored rows. Keying on file and line would collapse them into one.
+	entries := []store.Entry{
+		{LineNum: 4, EndLine: 4, Text: "fragmentprobe alpha", Embedding: []float32{1, 0, 0}, Folder: "src", Language: "go"},
+		{LineNum: 4, EndLine: 4, Text: "fragmentprobe beta", Embedding: []float32{0, 1, 0}, Folder: "src", Language: "go"},
+		{LineNum: 4, EndLine: 4, Text: "fragmentprobe gamma", Embedding: []float32{0, 0, 1}, Folder: "src", Language: "go"},
+	}
+	if err := s.InsertEntries("src", "long.go", entries); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := searchFTS(s, "fragmentprobe", 10, nil, MetadataFilters{})
+	if err != nil {
+		t.Fatalf("searchFTS: %v", err)
+	}
+	if len(results) != len(entries) {
+		t.Fatalf("got %d results, want %d: same-line fragments were deduplicated", len(results), len(entries))
+	}
+
+	seen := make(map[int64]bool, len(results))
+	for _, r := range results {
+		if r.RowID == 0 {
+			t.Fatal("FTS result carries no row id")
+		}
+		if seen[r.RowID] {
+			t.Fatalf("row %d returned twice", r.RowID)
+		}
+		seen[r.RowID] = true
+	}
+}

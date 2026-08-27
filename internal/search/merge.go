@@ -1,7 +1,6 @@
 package search
 
 import (
-	"fmt"
 	"sort"
 )
 
@@ -85,7 +84,7 @@ func mergeResultSets(sets []weightedResultSet, rrfK int, topK int, weights fusio
 	for _, set := range sets {
 		setWeight := weights.setWeight(set.Modality, set.Source)
 		for rank, r := range set.Results {
-			key := fmt.Sprintf("%s:%d", r.FilePath, r.LineNum)
+			key := resultKey(r)
 			score := setWeight / float64(rrfK+rank+1)
 			if existing, ok := m[key]; ok {
 				existing.rrfScore += score

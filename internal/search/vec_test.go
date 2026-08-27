@@ -92,6 +92,11 @@ func testExecVecQueryFiltersAndThreshold(t *testing.T, quantization string) {
 	if results[0].Score < 0.9 {
 		t.Fatalf("expected vec score >= 0.9, got %.3f", results[0].Score)
 	}
+	// Fusion keys on the row id, so a vec result without one would collapse
+	// into any FTS result on the same file and line.
+	if results[0].RowID == 0 {
+		t.Fatal("vec result carries no row id")
+	}
 }
 
 func TestSearchVecRetriesWhenFilteredResultsAreBelowTopK(t *testing.T) {

@@ -75,12 +75,13 @@ func Open(dbPath string, dimensions int, quantization string) (*Store, error) {
 // A targeted step preserves the indexed data; rebuild drops everything and
 // forces a full reindex.
 type migrationPlan struct {
-	rebuild bool // no targeted path exists: drop all tables
-	fts     bool // v5 -> v6: rebuild chunks_fts in the external-content layout
-	vecPart bool // v6 -> v7: re-partition vec_embeddings by source
+	rebuild  bool // no targeted path exists: drop all tables
+	fts      bool // v5 -> v6: rebuild chunks_fts in the external-content layout
+	vecPart  bool // v6 -> v7: re-partition vec_embeddings by source
+	metaCols bool // v7 -> v8: add embedding_meta.max_input_bytes
 }
 
-func (p migrationPlan) any() bool { return p.rebuild || p.fts || p.vecPart }
+func (p migrationPlan) any() bool { return p.rebuild || p.fts || p.vecPart || p.metaCols }
 
 // planMigration walks every version between the stored one and the current one
 // and collects the step for each. A version with no targeted step forces a full
@@ -98,6 +99,8 @@ func planMigration(storedVersion int) migrationPlan {
 			plan.fts = true
 		case 6:
 			plan.vecPart = true
+		case 7:
+			plan.metaCols = true
 		default:
 			return migrationPlan{rebuild: true}
 		}
@@ -124,7 +127,7 @@ func (s *Store) initSchema() error {
 				storedVersion, schemaVersion))
 		} else if plan.any() {
 			slog.Info("migrating schema", "stored", storedVersion, "want", schemaVersion,
-				"rebuild_fts", plan.fts, "repartition_vectors", plan.vecPart)
+				"rebuild_fts", plan.fts, "repartition_vectors", plan.vecPart, "add_meta_columns", plan.metaCols)
 		}
 	}
 
@@ -150,6 +153,13 @@ func (s *Store) initSchema() error {
 		if _, err := s.db.Exec(stmt); err != nil {
 			return fmt.Errorf("exec schema: %w", err)
 		}
+	}
+
+	// embedding_meta already exists here, so the CREATE TABLE above left a v7
+	// table without the new column. Add it before anything reads that column.
+	metaReady := false
+	if plan.metaCols {
+		metaReady = s.migrateMetaInputLimit()
 	}
 
 	// Only write version after a migration to avoid a DELETE+INSERT window
@@ -198,7 +208,7 @@ func (s *Store) initSchema() error {
 	if plan.rebuild {
 		return nil
 	}
-	reached := plan.reachedVersion(storedVersion, ftsReady, vecReady)
+	reached := plan.reachedVersion(storedVersion, ftsReady, vecReady, metaReady)
 	if reached == storedVersion {
 		return nil
 	}
@@ -211,7 +221,7 @@ func (s *Store) initSchema() error {
 // empty index behind a healthy-looking database. The version advances along the
 // contiguous run of successful steps only: a v5 database whose FTS rebuild
 // failed stays at 5 even if the later vec step succeeded.
-func (p migrationPlan) reachedVersion(storedVersion int, ftsReady, vecReady bool) int {
+func (p migrationPlan) reachedVersion(storedVersion int, ftsReady, vecReady, metaReady bool) int {
 	// One entry per targeted step, in version order. Each advances a database
 	// at from to from+1.
 	steps := []struct {
@@ -221,6 +231,7 @@ func (p migrationPlan) reachedVersion(storedVersion int, ftsReady, vecReady bool
 	}{
 		{from: 5, planned: p.fts, succeeded: ftsReady},
 		{from: 6, planned: p.vecPart, succeeded: vecReady},
+		{from: 7, planned: p.metaCols, succeeded: metaReady},
 	}
 
 	reached := storedVersion

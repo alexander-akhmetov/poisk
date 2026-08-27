@@ -10,6 +10,9 @@ import (
 	"github.com/alexander-akhmetov/poisk/internal/domain"
 )
 
+// testMaxInputBytes stands in for the configured embedding.max_input_bytes.
+const testMaxInputBytes = 8000
+
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
 	dir := t.TempDir()
@@ -128,20 +131,20 @@ func TestInsertAndCount(t *testing.T) {
 func TestModelChanged(t *testing.T) {
 	s := openTestStore(t)
 
-	mc, _ := s.ModelChanged("src", "model-v1", 768, QuantizationInt8)
+	mc, _ := s.ModelChanged("src", "model-v1", 768, QuantizationInt8, testMaxInputBytes)
 	if !mc.Changed {
 		t.Fatal("expected changed for new source")
 	}
 
-	if err := s.UpdateMeta("src", "model-v1", 768, QuantizationInt8); err != nil {
+	if err := s.UpdateMeta("src", "model-v1", 768, QuantizationInt8, testMaxInputBytes); err != nil {
 		t.Fatal(err)
 	}
-	mc, _ = s.ModelChanged("src", "model-v1", 768, QuantizationInt8)
+	mc, _ = s.ModelChanged("src", "model-v1", 768, QuantizationInt8, testMaxInputBytes)
 	if mc.Changed {
 		t.Fatal("expected not changed")
 	}
 
-	mc, _ = s.ModelChanged("src", "model-v2", 768, QuantizationInt8)
+	mc, _ = s.ModelChanged("src", "model-v2", 768, QuantizationInt8, testMaxInputBytes)
 	if !mc.Changed {
 		t.Fatal("expected changed after model change")
 	}
@@ -149,7 +152,7 @@ func TestModelChanged(t *testing.T) {
 		t.Fatalf("expected old model=model-v1 dims=768, got model=%s dims=%d", mc.OldModel, mc.OldDims)
 	}
 
-	mc, _ = s.ModelChanged("src", "model-v1", 768, QuantizationFloat32)
+	mc, _ = s.ModelChanged("src", "model-v1", 768, QuantizationFloat32, testMaxInputBytes)
 	if !mc.Changed {
 		t.Fatal("expected changed after quantization change")
 	}
@@ -169,7 +172,7 @@ func TestClearSource(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.UpdateMeta("src", "model", 3, QuantizationInt8); err != nil {
+	if err := s.UpdateMeta("src", "model", 3, QuantizationInt8, testMaxInputBytes); err != nil {
 		t.Fatal(err)
 	}
 
@@ -185,7 +188,7 @@ func TestClearSource(t *testing.T) {
 	if ok {
 		t.Fatal("expected mtime cleared")
 	}
-	mc, _ := s.ModelChanged("src", "model", 3, QuantizationInt8)
+	mc, _ := s.ModelChanged("src", "model", 3, QuantizationInt8, testMaxInputBytes)
 	if !mc.Changed {
 		t.Fatal("expected meta cleared")
 	}
@@ -202,10 +205,10 @@ func TestAllSources(t *testing.T) {
 		t.Fatalf("expected 0 sources, got %d", len(sources))
 	}
 
-	if err := s.UpdateMeta("src", "model", 3, QuantizationInt8); err != nil {
+	if err := s.UpdateMeta("src", "model", 3, QuantizationInt8, testMaxInputBytes); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.UpdateMeta("docs", "model", 3, QuantizationInt8); err != nil {
+	if err := s.UpdateMeta("docs", "model", 3, QuantizationInt8, testMaxInputBytes); err != nil {
 		t.Fatal(err)
 	}
 
@@ -258,6 +261,29 @@ func TestGetEntriesByPath(t *testing.T) {
 	// Metadata should be preserved
 	if got[0].Symbol != "main" || got[1].Symbol != "foo" || got[2].Symbol != "bar" {
 		t.Fatalf("symbols: %q, %q, %q", got[0].Symbol, got[1].Symbol, got[2].Symbol)
+	}
+
+	// Fragments of one oversized chunk share a line range, so insertion order
+	// is the only thing that puts them back in the right sequence.
+	fragments := []Entry{
+		{LineNum: 3, EndLine: 3, Text: "first half", Embedding: []float32{1, 0, 0}, Folder: "src"},
+		{LineNum: 3, EndLine: 3, Text: "second half", Embedding: []float32{0, 1, 0}, Folder: "src"},
+		{LineNum: 3, EndLine: 3, Text: "third half", Embedding: []float32{0, 0, 1}, Folder: "src"},
+	}
+	if err := s.InsertEntries("src", "long.go", fragments); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.GetEntriesByPath("src", "long.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d fragments, want 3", len(got))
+	}
+	for i, want := range []string{"first half", "second half", "third half"} {
+		if got[i].Text != want {
+			t.Fatalf("fragment %d = %q, want %q", i, got[i].Text, want)
+		}
 	}
 
 	// Different source returns empty
@@ -538,7 +564,7 @@ func TestReopenWithSameVersionDoesNotDropData(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s1.UpdateMeta("src", "model-v1", 3, QuantizationInt8); err != nil {
+	if err := s1.UpdateMeta("src", "model-v1", 3, QuantizationInt8, testMaxInputBytes); err != nil {
 		t.Fatal(err)
 	}
 	if err := s1.Close(); err != nil {
@@ -556,7 +582,7 @@ func TestReopenWithSameVersionDoesNotDropData(t *testing.T) {
 		t.Fatalf("count=%d after reopen, want 1 (data was dropped)", count)
 	}
 
-	mc, err := s2.ModelChanged("src", "model-v1", 3, QuantizationInt8)
+	mc, err := s2.ModelChanged("src", "model-v1", 3, QuantizationInt8, testMaxInputBytes)
 	if err != nil {
 		t.Fatalf("ModelChanged: %v", err)
 	}
@@ -591,7 +617,7 @@ func TestClearSourceAtomicity(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.UpdateMeta("src", "model", 3, QuantizationInt8); err != nil {
+	if err := s.UpdateMeta("src", "model", 3, QuantizationInt8, testMaxInputBytes); err != nil {
 		t.Fatal(err)
 	}
 
@@ -607,7 +633,7 @@ func TestClearSourceAtomicity(t *testing.T) {
 	if ok {
 		t.Fatal("embedding_files not cleared")
 	}
-	mc, _ := s.ModelChanged("src", "model", 3, QuantizationInt8)
+	mc, _ := s.ModelChanged("src", "model", 3, QuantizationInt8, testMaxInputBytes)
 	if !mc.Changed {
 		t.Fatal("embedding_meta not cleared")
 	}
@@ -809,7 +835,7 @@ func TestVec0DimensionChange(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("insert dims=3: %v", err)
 	}
-	if err := s1.UpdateMeta("src", "model-v1", 3, QuantizationInt8); err != nil {
+	if err := s1.UpdateMeta("src", "model-v1", 3, QuantizationInt8, testMaxInputBytes); err != nil {
 		t.Fatalf("update meta dims=3: %v", err)
 	}
 	if err := s1.Close(); err != nil {
@@ -837,7 +863,7 @@ func TestVec0DimensionChange(t *testing.T) {
 	}
 
 	// Stale meta with old dimensions should be cleaned
-	mc, err := s2.ModelChanged("src", "model-v1", 5, QuantizationInt8)
+	mc, err := s2.ModelChanged("src", "model-v1", 5, QuantizationInt8, testMaxInputBytes)
 	if err != nil {
 		t.Fatalf("ModelChanged: %v", err)
 	}
@@ -864,7 +890,7 @@ func TestVec0QuantizationChange(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("insert int8: %v", err)
 	}
-	if err := s1.UpdateMeta("src", "model-v1", 3, QuantizationInt8); err != nil {
+	if err := s1.UpdateMeta("src", "model-v1", 3, QuantizationInt8, testMaxInputBytes); err != nil {
 		t.Fatalf("update meta int8: %v", err)
 	}
 	if err := s1.Close(); err != nil {
@@ -900,7 +926,7 @@ func TestVec0QuantizationChange(t *testing.T) {
 	}
 
 	// Stale meta with old quantization should be cleaned
-	mc, err := s2.ModelChanged("src", "model-v1", 3, QuantizationFloat32)
+	mc, err := s2.ModelChanged("src", "model-v1", 3, QuantizationFloat32, testMaxInputBytes)
 	if err != nil {
 		t.Fatalf("ModelChanged: %v", err)
 	}

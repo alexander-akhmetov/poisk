@@ -403,23 +403,27 @@ func TestMigrationPlanReachedVersion(t *testing.T) {
 		storedVersion int
 		ftsReady      bool
 		vecReady      bool
+		metaReady     bool
 		want          int
 	}{
-		{name: "v6 vec step succeeds", storedVersion: 6, vecReady: true, want: 7},
-		{name: "v6 vec step fails", storedVersion: 6, vecReady: false, want: 6},
-		{name: "v5 both steps succeed", storedVersion: 5, ftsReady: true, vecReady: true, want: 7},
-		{name: "v5 fts succeeds, vec fails", storedVersion: 5, ftsReady: true, vecReady: false, want: 6},
-		{name: "v5 fts fails, vec succeeds anyway", storedVersion: 5, ftsReady: false, vecReady: true, want: 5},
-		{name: "v5 both fail", storedVersion: 5, want: 5},
-		{name: "already current", storedVersion: 7, ftsReady: true, vecReady: true, want: 7},
+		{name: "v7 meta step succeeds", storedVersion: 7, metaReady: true, want: 8},
+		{name: "v7 meta step fails", storedVersion: 7, metaReady: false, want: 7},
+		{name: "v6 vec step succeeds", storedVersion: 6, vecReady: true, metaReady: true, want: 8},
+		{name: "v6 vec step fails", storedVersion: 6, vecReady: false, metaReady: true, want: 6},
+		{name: "v6 vec succeeds, meta fails", storedVersion: 6, vecReady: true, metaReady: false, want: 7},
+		{name: "v5 every step succeeds", storedVersion: 5, ftsReady: true, vecReady: true, metaReady: true, want: 8},
+		{name: "v5 fts succeeds, vec fails", storedVersion: 5, ftsReady: true, vecReady: false, metaReady: true, want: 6},
+		{name: "v5 fts fails, vec succeeds anyway", storedVersion: 5, ftsReady: false, vecReady: true, metaReady: true, want: 5},
+		{name: "v5 every step fails", storedVersion: 5, want: 5},
+		{name: "already current", storedVersion: 8, ftsReady: true, vecReady: true, metaReady: true, want: 8},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			plan := planMigration(tt.storedVersion)
-			if got := plan.reachedVersion(tt.storedVersion, tt.ftsReady, tt.vecReady); got != tt.want {
-				t.Fatalf("reachedVersion(stored=%d, fts=%v, vec=%v) = %d, want %d",
-					tt.storedVersion, tt.ftsReady, tt.vecReady, got, tt.want)
+			if got := plan.reachedVersion(tt.storedVersion, tt.ftsReady, tt.vecReady, tt.metaReady); got != tt.want {
+				t.Fatalf("reachedVersion(stored=%d, fts=%v, vec=%v, meta=%v) = %d, want %d",
+					tt.storedVersion, tt.ftsReady, tt.vecReady, tt.metaReady, got, tt.want)
 			}
 		})
 	}
@@ -431,9 +435,10 @@ func TestPlanMigration(t *testing.T) {
 		storedVersion int
 		want          migrationPlan
 	}{
-		{"current version needs nothing", 7, migrationPlan{}},
-		{"v6 repartitions vectors", 6, migrationPlan{vecPart: true}},
-		{"v5 chains fts then vectors", 5, migrationPlan{fts: true, vecPart: true}},
+		{"current version needs nothing", 8, migrationPlan{}},
+		{"v7 adds meta columns", 7, migrationPlan{metaCols: true}},
+		{"v6 repartitions vectors", 6, migrationPlan{vecPart: true, metaCols: true}},
+		{"v5 chains fts, vectors then meta", 5, migrationPlan{fts: true, vecPart: true, metaCols: true}},
 		{"v4 has no path", 4, migrationPlan{rebuild: true}},
 		{"future version rebuilds", 99, migrationPlan{rebuild: true}},
 	}

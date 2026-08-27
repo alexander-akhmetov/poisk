@@ -78,21 +78,21 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 	stats := FolderStats{Folder: folder}
 
 	// Check model change
-	mc, err := ix.store.ModelChanged(folder, ix.cfg.Embedding.Model, ix.cfg.Embedding.Dimensions, ix.cfg.Embedding.Quantization)
+	mc, err := ix.store.ModelChanged(folder, ix.cfg.Embedding.Model, ix.cfg.Embedding.Dimensions, ix.cfg.Embedding.Quantization, ix.cfg.Embedding.MaxInputBytes)
 	if err != nil {
 		return stats, err
 	}
 	if mc.Changed {
 		slog.Info("model changed, rebuilding",
 			"folder", folder,
-			"old_model", mc.OldModel, "old_dims", mc.OldDims, "old_quantization", mc.OldQuantization,
-			"new_model", ix.cfg.Embedding.Model, "new_dims", ix.cfg.Embedding.Dimensions, "new_quantization", ix.cfg.Embedding.Quantization)
+			"old_model", mc.OldModel, "old_dims", mc.OldDims, "old_quantization", mc.OldQuantization, "old_max_input_bytes", mc.OldMaxInputBytes,
+			"new_model", ix.cfg.Embedding.Model, "new_dims", ix.cfg.Embedding.Dimensions, "new_quantization", ix.cfg.Embedding.Quantization, "new_max_input_bytes", ix.cfg.Embedding.MaxInputBytes)
 		if err := ix.store.ClearSource(folder); err != nil {
 			return stats, fmt.Errorf("clear source %s: %w", folder, err)
 		}
 		// Write meta early so interrupted re-indexing resumes incrementally
-		if err := ix.store.UpdateMeta(folder, ix.cfg.Embedding.Model, ix.cfg.Embedding.Dimensions, ix.cfg.Embedding.Quantization); err != nil {
-			return stats, fmt.Errorf("update meta for %s: %w", folder, err)
+		if err := ix.updateMeta(folder); err != nil {
+			return stats, err
 		}
 	}
 
@@ -217,12 +217,19 @@ func (ix *Indexer) indexFolder(ctx context.Context, folder string) (FolderStats,
 
 	slog.Info("folder done", "folder", folder, "processed", stats.FilesProcessed, "skipped", stats.FilesSkipped, "chunks", stats.ChunksCreated, "errors", stats.Errors)
 
-	// Update meta
-	if err := ix.store.UpdateMeta(folder, ix.cfg.Embedding.Model, ix.cfg.Embedding.Dimensions, ix.cfg.Embedding.Quantization); err != nil {
-		return stats, fmt.Errorf("update meta for %s: %w", folder, err)
+	if err := ix.updateMeta(folder); err != nil {
+		return stats, err
 	}
 
 	return stats, nil
+}
+
+func (ix *Indexer) updateMeta(folder string) error {
+	e := ix.cfg.Embedding
+	if err := ix.store.UpdateMeta(folder, e.Model, e.Dimensions, e.Quantization, e.MaxInputBytes); err != nil {
+		return fmt.Errorf("update meta for %s: %w", folder, err)
+	}
+	return nil
 }
 
 // pendingFile is a chunked file waiting to be embedded with its neighbours.
@@ -243,7 +250,7 @@ func (ix *Indexer) prepareFile(folder, filePath string, mtime int64, stats *Fold
 		return nil, false
 	}
 
-	chunks, chunkErr := chunk.File(filePath, string(content))
+	chunks, chunkErr := chunk.FileWithLimit(filePath, string(content), ix.cfg.Embedding.MaxInputBytes)
 	if chunkErr != nil {
 		ix.clearStaleEntries(folder, filePath, "chunk_parse_failed", chunkErr)
 		slog.Warn("chunk parse error", "file", filePath, "error", chunkErr)
@@ -331,25 +338,28 @@ func (ix *Indexer) embedGroup(ctx context.Context, folder string, group []pendin
 	}
 }
 
-// embedTexts sends texts to the embedding API, splitting into BatchSize
-// requests. A group only exceeds BatchSize when it holds a single oversized
-// file, so this stays a one-request call for grouped files. logPath names that
-// oversized file in the per-batch progress log.
+// embedTexts sends texts to the embedding API in requests bounded by both
+// BatchSize and BatchMaxBytes. Every vector is collected before the caller
+// writes anything, so a file spread over several requests still reaches the
+// store in one InsertEntries call. logPath names the file the group started
+// with in the per-batch log.
 func (ix *Indexer) embedTexts(ctx context.Context, texts []string, logPath string) ([][]float32, error) {
-	batchSize := ix.cfg.Embedding.BatchSize
-	totalBatches := (len(texts) + batchSize - 1) / batchSize
+	batches := partitionByBudget(texts, ix.cfg.Embedding.BatchSize, ix.cfg.Embedding.BatchMaxBytes)
 
 	embeddings := make([][]float32, 0, len(texts))
-	for i := 0; i < len(texts); i += batchSize {
-		end := min(i+batchSize, len(texts))
-		if totalBatches > 1 {
-			slog.Info("embedding batch", "file", logPath, "batch", fmt.Sprintf("%d/%d", i/batchSize+1, totalBatches))
+	for i, b := range batches {
+		totalBytes, largest := batchBytes(b)
+		start := time.Now()
+
+		batch, err := ix.client.EmbedBatch(ctx, b)
+		elapsed := time.Since(start).Round(time.Millisecond)
+		if err != nil {
+			return nil, fmt.Errorf("embedding batch %d/%d (%d inputs, %d bytes, largest %d, after %s): %w",
+				i+1, len(batches), len(b), totalBytes, largest, elapsed, err)
 		}
 
-		batch, err := ix.client.EmbedBatch(ctx, texts[i:end])
-		if err != nil {
-			return nil, err
-		}
+		slog.Info("embedded batch", "file", logPath, "batch", fmt.Sprintf("%d/%d", i+1, len(batches)),
+			"inputs", len(b), "bytes", totalBytes, "largest_input", largest, "elapsed", elapsed)
 		embeddings = append(embeddings, batch...)
 	}
 
@@ -357,6 +367,50 @@ func (ix *Indexer) embedTexts(ctx context.Context, texts []string, logPath strin
 		return nil, fmt.Errorf("embedding count mismatch: got %d for %d chunks", len(embeddings), len(texts))
 	}
 	return embeddings, nil
+}
+
+// partitionByBudget splits texts into requests that hold at most maxCount
+// inputs and maxBytes of raw text, preserving order. maxBytes counts chunk
+// bytes only; the marshaled JSON body is larger and the provider's token count
+// is unrelated.
+//
+// A non-positive limit means unbounded, so a programmatic config that skipped
+// validation cannot stall the loop.
+func partitionByBudget(texts []string, maxCount, maxBytes int) [][]string {
+	if len(texts) == 0 {
+		return nil
+	}
+	if maxCount <= 0 {
+		maxCount = len(texts)
+	}
+
+	var batches [][]string
+	start := 0
+	bytes := 0
+	for i, t := range texts {
+		// Config validation keeps max_input_bytes at or below max batch bytes,
+		// so a single input over the whole budget only arrives through a
+		// programmatic config. Send it alone rather than make no progress.
+		if i > start && (i-start >= maxCount || (maxBytes > 0 && bytes+len(t) > maxBytes)) {
+			batches = append(batches, texts[start:i])
+			start = i
+			bytes = 0
+		}
+		if i == start && maxBytes > 0 && len(t) > maxBytes {
+			slog.Warn("embedding input exceeds the configured batch text budget, sending it alone",
+				"input_bytes", len(t), "batch_max_bytes", maxBytes)
+		}
+		bytes += len(t)
+	}
+	return append(batches, texts[start:])
+}
+
+func batchBytes(texts []string) (total, largest int) {
+	for _, t := range texts {
+		total += len(t)
+		largest = max(largest, len(t))
+	}
+	return total, largest
 }
 
 func (ix *Indexer) clearStaleEntries(source, filePath, reason string, cause error) {

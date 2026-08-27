@@ -1,8 +1,10 @@
 package chunk
 
 import (
+	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestChunkMarkdown(t *testing.T) {
@@ -329,7 +331,7 @@ Third level text that is long enough for the chunker to include it here.
 }
 
 func TestChunkMarkdownLargeSection(t *testing.T) {
-	// Create a section that exceeds maxSectionChars
+	// Create a section that exceeds maxSectionBytes
 	var sb strings.Builder
 	sb.WriteString("# Big Section\n\n")
 	for range 200 {
@@ -345,8 +347,206 @@ func TestChunkMarkdownLargeSection(t *testing.T) {
 		t.Fatalf("got %d chunks, want >= 2 (section should be split)", len(chunks))
 	}
 	for _, c := range chunks {
-		if len(c.Text) > maxSectionChars*2 {
+		if len(c.Text) > maxSectionBytes*2 {
 			t.Errorf("chunk too large: %d chars", len(c.Text))
 		}
+	}
+}
+
+// oneLine returns a single line of body bytes long, with no newline and no
+// place for a chunker to split semantically.
+func oneLine(body int) string {
+	return strings.Repeat("x", body)
+}
+
+func TestFileWithLimitCapsEveryDispatchPath(t *testing.T) {
+	const oversized = 100 * 1024
+
+	tests := []struct {
+		name    string
+		path    string
+		content string
+	}{
+		{
+			name:    "markdown paragraph",
+			path:    "big.md",
+			content: "# Heading\n\n" + oneLine(oversized),
+		},
+		{
+			name:    "unknown extension falls back to source chunking",
+			path:    "big.txt",
+			content: oneLine(oversized),
+		},
+		{
+			name:    "tree-sitter go node",
+			path:    "big.go",
+			content: "package main\n\nvar Blob = \"" + oneLine(oversized) + "\"\n",
+		},
+		{
+			name:    "jsonl that is not a session",
+			path:    "big.jsonl",
+			content: "{\"blob\":\"" + oneLine(oversized) + "\"}\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, limit := range []int{4, 100, 8000} {
+				chunks, err := FileWithLimit(tt.path, tt.content, limit)
+				if err != nil {
+					t.Fatalf("limit %d: %v", limit, err)
+				}
+				if len(chunks) == 0 {
+					t.Fatalf("limit %d: no chunks", limit)
+				}
+				for i, c := range chunks {
+					if len(c.Text) > limit {
+						t.Fatalf("limit %d: chunk %d is %d bytes", limit, i, len(c.Text))
+					}
+					if !utf8.ValidString(c.Text) {
+						t.Fatalf("limit %d: chunk %d is not valid UTF-8", limit, i)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestFileWithLimitDoesNotShredContentThatIsNotUTF8(t *testing.T) {
+	const limit = 8000
+	// A .txt holding UTF-16 or binary reaches the chunkers like any other
+	// document, and it has no rune start to cut on.
+	content := strings.Repeat("\x80", 60*1024)
+
+	chunks, err := FileWithLimit("notes.txt", content, limit)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := (len(content) + limit - 1) / limit
+	if len(chunks) > want+1 {
+		t.Fatalf("got %d chunks for %d bytes, want about %d", len(chunks), len(content), want)
+	}
+	for i, c := range chunks {
+		if len(c.Text) > limit {
+			t.Fatalf("chunk %d is %d bytes", i, len(c.Text))
+		}
+	}
+}
+
+func TestCapChunkSizePreservesTextAndMetadata(t *testing.T) {
+	original := Chunk{
+		Text:      strings.Repeat("héllo wörld ", 2000),
+		StartLine: 12,
+		EndLine:   40,
+		Language:  "markdown",
+		Kind:      "paragraph",
+		Symbol:    "# Heading",
+	}
+
+	tests := []struct {
+		name    string
+		maxByte int
+		want    int // fragments expected, 0 means "more than one"
+	}{
+		{name: "one byte under the limit", maxByte: len(original.Text) + 1, want: 1},
+		{name: "exactly the limit", maxByte: len(original.Text), want: 1},
+		{name: "one byte over the limit", maxByte: len(original.Text) - 1, want: 2},
+		{name: "small limit", maxByte: 64, want: 0},
+		{name: "smallest limit that holds a rune", maxByte: 4, want: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := capChunkSize([]Chunk{original}, tt.maxByte)
+			if tt.want > 0 && len(got) != tt.want {
+				t.Fatalf("got %d fragments, want %d", len(got), tt.want)
+			}
+			if tt.want == 0 && len(got) < 2 {
+				t.Fatalf("got %d fragments, want more than one", len(got))
+			}
+
+			var rebuilt strings.Builder
+			for i, c := range got {
+				if len(c.Text) > tt.maxByte {
+					t.Fatalf("fragment %d is %d bytes, over the %d limit", i, len(c.Text), tt.maxByte)
+				}
+				if !utf8.ValidString(c.Text) {
+					t.Fatalf("fragment %d cuts a rune", i)
+				}
+				if c.StartLine != original.StartLine || c.EndLine != original.EndLine ||
+					c.Language != original.Language || c.Kind != original.Kind || c.Symbol != original.Symbol {
+					t.Fatalf("fragment %d changed metadata: %+v", i, c)
+				}
+				rebuilt.WriteString(c.Text)
+			}
+			if rebuilt.String() != original.Text {
+				t.Fatal("fragments do not reassemble into the original text")
+			}
+		})
+	}
+}
+
+func TestSplitToLimitBoundaries(t *testing.T) {
+	tests := []struct {
+		name     string
+		text     string
+		maxBytes int
+		want     []string
+	}{
+		{
+			name:     "text at the limit is one fragment",
+			text:     strings.Repeat("a", 8),
+			maxBytes: 8,
+			want:     []string{strings.Repeat("a", 8)},
+		},
+		{
+			name:     "one byte over leaves a tiny tail",
+			text:     strings.Repeat("a", 9),
+			maxBytes: 8,
+			want:     []string{strings.Repeat("a", 8), "a"},
+		},
+		{
+			name:     "cuts after a newline in the boundary window",
+			text:     "aaaaaaaaaaaa\nbbbbbb",
+			maxBytes: 16,
+			want:     []string{"aaaaaaaaaaaa\n", "bbbbbb"},
+		},
+		{
+			name:     "cuts after a space when there is no newline",
+			text:     "aaaaaaaaaaaa bbbbbb",
+			maxBytes: 16,
+			want:     []string{"aaaaaaaaaaaa ", "bbbbbb"},
+		},
+		{
+			name:     "ignores a boundary too far back to make progress",
+			text:     "a bcdefghijklmnop",
+			maxBytes: 8,
+			want:     []string{"a bcdefg", "hijklmno", "p"},
+		},
+		{
+			name:     "backs off a four-byte rune crossing the cut",
+			text:     "aaaaaa\U0001F600b",
+			maxBytes: 8,
+			want:     []string{"aaaaaa", "\U0001F600b"},
+		},
+		{
+			// Text with no rune start anywhere: a .txt holding UTF-16 or
+			// binary. Searching further back for one would cut it a byte at a
+			// time and turn one file into tens of thousands of chunks.
+			name:     "text that is not UTF-8 cuts at the limit",
+			text:     strings.Repeat("\x80", 20),
+			maxBytes: 8,
+			want:     []string{strings.Repeat("\x80", 8), strings.Repeat("\x80", 8), strings.Repeat("\x80", 4)},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := splitToLimit(tt.text, tt.maxBytes)
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("splitToLimit(%q, %d) = %q, want %q", tt.text, tt.maxBytes, got, tt.want)
+			}
+		})
 	}
 }

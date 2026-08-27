@@ -15,7 +15,7 @@ import (
 	typescript "github.com/smacker/go-tree-sitter/typescript/typescript"
 )
 
-const maxChunkBytes = 8000
+const maxChunkBytes = DefaultMaxInputBytes
 
 type langSpec struct {
 	language       *sitter.Language
