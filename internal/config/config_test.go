@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDefaultConfigHasFusionWeights(t *testing.T) {
@@ -33,6 +34,9 @@ func TestDefaultConfigHasFusionWeights(t *testing.T) {
 	}
 	if cfg.Search.MinScore < 0 {
 		t.Fatalf("default min_score must be >= 0, got %v", cfg.Search.MinScore)
+	}
+	if cfg.Search.EmbeddingTimeout != 5*time.Second {
+		t.Fatalf("default embedding timeout = %v, want 5s", cfg.Search.EmbeddingTimeout)
 	}
 	if cfg.Embedding.Quantization != "int8" {
 		t.Fatalf("default quantization must be int8, got %q", cfg.Embedding.Quantization)
@@ -72,6 +76,16 @@ func TestValidateRejectsInvalidFusionWeights(t *testing.T) {
 			name: "vec weight nan",
 			edit: func(c *Config) { c.Search.VecWeight = math.NaN() },
 			want: "search.vec_weight",
+		},
+		{
+			name: "embedding timeout zero",
+			edit: func(c *Config) { c.Search.EmbeddingTimeout = 0 },
+			want: "search.embedding_timeout",
+		},
+		{
+			name: "embedding timeout negative",
+			edit: func(c *Config) { c.Search.EmbeddingTimeout = -time.Second },
+			want: "search.embedding_timeout",
 		},
 		{
 			name: "rerank topn <= 0",
@@ -294,6 +308,9 @@ model = "custom-model"
 dimensions = 128
 batch_size = 10
 
+[search]
+embedding_timeout = "750ms"
+
 [[folders]]
 path = "/tmp/test"
 description = "test folder"
@@ -311,6 +328,9 @@ description = "test folder"
 		}
 		if cfg.Embedding.Dimensions != 128 {
 			t.Errorf("dimensions = %d, want 128", cfg.Embedding.Dimensions)
+		}
+		if cfg.Search.EmbeddingTimeout != 750*time.Millisecond {
+			t.Errorf("embedding timeout = %v, want 750ms", cfg.Search.EmbeddingTimeout)
 		}
 		if len(cfg.Folders) != 1 || cfg.Folders[0].Path != "/tmp/test" {
 			t.Errorf("folders = %v, want [{/tmp/test}]", cfg.Folders)
@@ -335,6 +355,31 @@ description = "test folder"
 		}
 		if !strings.Contains(err.Error(), "parse config") {
 			t.Errorf("error = %q, want 'parse config' substring", err.Error())
+		}
+	})
+
+	t.Run("invalid embedding timeout", func(t *testing.T) {
+		tmp := t.TempDir()
+		t.Setenv("XDG_CONFIG_HOME", tmp)
+
+		dir := filepath.Join(tmp, "poisk")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		content := `
+[search]
+embedding_timeout = "slow"
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := Load()
+		if err == nil {
+			t.Fatal("expected duration parse error")
+		}
+		if !strings.Contains(err.Error(), "invalid duration") {
+			t.Errorf("error = %q, want invalid duration", err.Error())
 		}
 	})
 

@@ -112,7 +112,10 @@ func (s *Searcher) embedTasks(ctx context.Context, tasks []retrievalTask) error 
 		return nil
 	}
 
-	vecs, err := s.client.EmbedBatch(ctx, texts)
+	embedCtx, cancel := context.WithTimeout(ctx, s.cfg.Search.EmbeddingTimeout)
+	defer cancel()
+
+	vecs, err := s.client.EmbedBatch(embedCtx, texts)
 	if err != nil {
 		slog.Warn("embedding failed", "error", err, "queries", len(texts))
 		for _, i := range idx {

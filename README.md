@@ -99,6 +99,8 @@ Vectors are stored int8-quantized by default, which makes the index about 4x sma
 
 Halving `dimensions` roughly halves search time and index size. How much recall it costs depends on the model, so treat 512 as something to evaluate against your own corpus rather than a recommendation. The default stays 1024.
 
+Query embedding requests time out after 5 seconds by default. Set `embedding_timeout = "500ms"` under `[search]` to change it. Hybrid search falls back to keyword results after a timeout; `vec:` queries return an error. This timeout does not apply to indexing.
+
 Reranking and query expansion both ask the `[llm]` model for a short answer under a small token budget. A reasoning model spends that budget on thinking and returns empty content, so each search waits seconds for an answer it then discards. poisk turns thinking off automatically for Qwen3-family model names; if the server rejects the field, poisk drops it and retries without it.
 
 For a reasoning model poisk does not recognise, turn thinking off yourself:

@@ -2,9 +2,12 @@ package search
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alexander-akhmetov/poisk/internal/config"
 	"github.com/alexander-akhmetov/poisk/internal/embed"
@@ -68,6 +71,64 @@ func TestSearchReturnsPartialResultsWhenVecFails(t *testing.T) {
 	}
 	if len(results) == 0 {
 		t.Fatalf("expected FTS results despite vec failure")
+	}
+}
+
+func TestSearchEmbeddingTimeoutFallsBackToFTS(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "search-embedding-timeout.db")
+	s, err := store.Open(dbPath, 3, store.QuantizationInt8)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if !s.FTSAvailable() {
+		t.Skip("FTS5 not available")
+	}
+
+	if err := s.InsertEntries("repo", "target.go", []store.Entry{{
+		LineNum:   10,
+		EndLine:   20,
+		Text:      "binary search algorithm implementation details",
+		Embedding: []float32{1, 0, 0},
+		Folder:    "repo",
+		Language:  "go",
+	}}); err != nil {
+		t.Fatalf("insert fixture entry: %v", err)
+	}
+
+	requestStarted := make(chan struct{}, 1)
+	embedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requestStarted <- struct{}{}
+		time.Sleep(500 * time.Millisecond)
+		http.Error(w, "request exceeded the search deadline", http.StatusInternalServerError)
+	}))
+	t.Cleanup(embedServer.Close)
+
+	cfg := testSearchConfig(3)
+	cfg.Embedding.BaseURL = embedServer.URL
+	cfg.Search.EmbeddingTimeout = 100 * time.Millisecond
+	client := embed.NewClient(
+		cfg.Embedding.BaseURL,
+		cfg.Embedding.APIKey,
+		cfg.Embedding.Model,
+		cfg.Embedding.Dimensions,
+		cfg.Embedding.SendDimensions,
+		cfg.Embedding.Matryoshka,
+	)
+	searcher := NewSearcher(s, client, &cfg, nil)
+
+	results, searchErr := searcher.Search(context.Background(), "binary search algorithm", 5, nil)
+
+	if searchErr == nil || !strings.Contains(searchErr.Error(), context.DeadlineExceeded.Error()) {
+		t.Fatalf("search error = %v, want embedding deadline", searchErr)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected FTS results after embedding timeout")
+	}
+	select {
+	case <-requestStarted:
+	default:
+		t.Fatal("embedding request did not reach the server")
 	}
 }
 

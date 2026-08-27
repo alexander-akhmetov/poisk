@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -56,19 +57,20 @@ type EmbeddingConfig struct {
 }
 
 type SearchConfig struct {
-	RRFk                int     `toml:"rrf_k"` // RRF constant, default 60
-	SimilarityThreshold float64 `toml:"similarity_threshold"`
-	DefaultTopK         int     `toml:"default_top_k"`
-	VecWeight           float64 `toml:"vec_weight"`
-	FTSWeight           float64 `toml:"fts_weight"`
-	OriginalQueryWeight float64 `toml:"original_query_weight"`
-	ExpandedQueryWeight float64 `toml:"expanded_query_weight"`
-	QueryExpansion      bool    `toml:"query_expansion"`
-	Rerank              bool    `toml:"rerank"`
-	RerankTopN          int     `toml:"rerank_top_n"`
-	RerankTopWeight     float64 `toml:"rerank_retrieval_weight_top"`
-	RerankBottomWeight  float64 `toml:"rerank_retrieval_weight_bottom"`
-	MinScore            float64 `toml:"min_score"`
+	RRFk                int           `toml:"rrf_k"` // RRF constant, default 60
+	SimilarityThreshold float64       `toml:"similarity_threshold"`
+	DefaultTopK         int           `toml:"default_top_k"`
+	VecWeight           float64       `toml:"vec_weight"`
+	FTSWeight           float64       `toml:"fts_weight"`
+	OriginalQueryWeight float64       `toml:"original_query_weight"`
+	ExpandedQueryWeight float64       `toml:"expanded_query_weight"`
+	EmbeddingTimeout    time.Duration `toml:"embedding_timeout"`
+	QueryExpansion      bool          `toml:"query_expansion"`
+	Rerank              bool          `toml:"rerank"`
+	RerankTopN          int           `toml:"rerank_top_n"`
+	RerankTopWeight     float64       `toml:"rerank_retrieval_weight_top"`
+	RerankBottomWeight  float64       `toml:"rerank_retrieval_weight_bottom"`
+	MinScore            float64       `toml:"min_score"`
 }
 
 type IndexConfig struct {
@@ -131,6 +133,7 @@ func DefaultConfig() Config {
 			FTSWeight:           1.1,
 			OriginalQueryWeight: 1.0,
 			ExpandedQueryWeight: 0.25,
+			EmbeddingTimeout:    5 * time.Second,
 			Rerank:              true,
 			RerankTopN:          20,
 			RerankTopWeight:     0.8,
@@ -230,6 +233,9 @@ func (s *SearchConfig) validate() error {
 	}
 	if err := validatePositiveFloat(s.ExpandedQueryWeight, "search.expanded_query_weight"); err != nil {
 		return err
+	}
+	if s.EmbeddingTimeout <= 0 {
+		return fmt.Errorf("search.embedding_timeout must be > 0, got %v", s.EmbeddingTimeout)
 	}
 	if s.RerankTopN <= 0 {
 		return fmt.Errorf("search.rerank_top_n must be > 0, got %v", s.RerankTopN)

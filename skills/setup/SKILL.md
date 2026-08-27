@@ -113,6 +113,7 @@ Search tuning. Defaults work well for most cases.
 | `rrf_k` | `60` | RRF constant (higher = more weight to top-ranked) |
 | `similarity_threshold` | `0.3` | Minimum cosine similarity (0.0–1.0) |
 | `default_top_k` | `20` | Default number of results |
+| `embedding_timeout` | `5s` | Query embedding deadline; hybrid search falls back to keyword results on timeout |
 | `vec_weight` | `1.0` | Vector search contribution multiplier |
 | `fts_weight` | `1.1` | Keyword search contribution multiplier |
 | `original_query_weight` | `1.0` | Weight for the original query |
@@ -122,6 +123,8 @@ Search tuning. Defaults work well for most cases.
 | `rerank_top_n` | `20` | Number of candidates to rerank |
 | `rerank_retrieval_weight_top` | `0.8` | Retrieval signal blend for top results (0.0–1.0) |
 | `rerank_retrieval_weight_bottom` | `0.2` | Retrieval signal blend for bottom results (0.0–1.0) |
+
+`embedding_timeout` accepts Go duration strings such as `500ms`, `5s`, or `1m`. It applies only to query embeddings. Indexing keeps its longer request timeout. A timed-out `vec:` query returns an error because it has no keyword search to fall back to.
 
 ### `[llm]`
 

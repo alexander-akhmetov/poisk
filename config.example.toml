@@ -31,6 +31,9 @@ rrf_k = 60
 similarity_threshold = 0.3
 # Default number of results returned
 default_top_k = 20
+# Maximum time to wait for query embeddings. On timeout, hybrid search falls
+# back to keyword results; vec: queries return an error. Indexing is unaffected.
+embedding_timeout = "5s"
 # Weighted RRF: modality contribution multipliers.
 # Increase fts_weight for exact-token precision, vec_weight for semantic recall.
 vec_weight = 1.0
